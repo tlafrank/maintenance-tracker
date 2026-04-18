@@ -1,6 +1,6 @@
 """add global asset types and interval basis
 
-Revision ID: 0002_asset_types_and_interval_basis
+Revision ID: 0002_asset_types_interval
 Revises: 0001_initial
 Create Date: 2026-04-18
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '0002_asset_types_and_interval_basis'
+revision: str = '0002_asset_types_interval'
 down_revision: Union[str, None] = '0001_initial'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
