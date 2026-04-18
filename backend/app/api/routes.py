@@ -21,6 +21,7 @@ from app.schemas.schemas import (
     MaintenanceEventCreate,
     MaintenanceEventOut,
     MaintenanceActivitySuggestion,
+    MaintenanceTaskSuggestion,
     MeterCreate,
     MeterOut,
     MeterReadingCreate,
@@ -358,6 +359,27 @@ def create_event(asset_id: int, payload: MaintenanceEventCreate, current_user: U
     return event
 
 
+@router.put('/maintenance-events/{event_id}', response_model=MaintenanceEventOut)
+def update_event(event_id: int, payload: MaintenanceEventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    event = db.get(MaintenanceEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail='Maintenance event not found')
+    asset = _owned_asset(event.asset_id, current_user.id, db)
+    event.event_type = payload.event_type
+    event.notes = payload.notes
+    event.completion_meter_value = payload.completion_meter_value
+    if payload.performed_at:
+        event.performed_at = payload.performed_at
+
+    if payload.completion_meter_value is not None:
+        meter = db.scalar(select(Meter).where(Meter.asset_id == asset.id).order_by(desc(Meter.id)))
+        if meter:
+            meter.current_value = payload.completion_meter_value
+    db.commit()
+    db.refresh(event)
+    return event
+
+
 @router.get('/maintenance-activities', response_model=list[MaintenanceActivitySuggestion])
 def list_maintenance_activities(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     events = db.scalars(
@@ -382,6 +404,25 @@ def list_maintenance_activities(current_user: User = Depends(get_current_user), 
             )
         )
     return suggestions
+
+
+@router.get('/maintenance-tasks', response_model=list[MaintenanceTaskSuggestion])
+def list_maintenance_tasks(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    events = db.scalars(
+        select(MaintenanceEvent)
+        .where(MaintenanceEvent.performed_by_user_id == current_user.id)
+        .order_by(desc(MaintenanceEvent.performed_at))
+    ).all()
+    seen: set[str] = set()
+    tasks: list[MaintenanceTaskSuggestion] = []
+    for event in events:
+        for task in [part.strip() for part in event.event_type.split(',')]:
+            key = task.lower()
+            if not task or key in seen:
+                continue
+            seen.add(key)
+            tasks.append(MaintenanceTaskSuggestion(task_name=task))
+    return tasks
 
 
 @router.get('/dashboard', response_model=DashboardOut)

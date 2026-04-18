@@ -159,6 +159,10 @@ class MaintenanceActivitySuggestion(BaseModel):
     last_completion_meter_value: float | None = None
 
 
+class MaintenanceTaskSuggestion(BaseModel):
+    task_name: str
+
+
 class DashboardItem(BaseModel):
     asset_id: int
     schedule_id: int

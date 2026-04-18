@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../api/client'
 
 const INTERVAL_BASIS_OPTIONS = [
@@ -282,11 +282,7 @@ export function AssetDetailPage() {
         ) : (
           <p>No meter readings recorded yet.</p>
         )}
-        {primaryCompatibleMeter ? (
-          <p><strong>Configured meter:</strong> {primaryCompatibleMeter.meter_type} ({primaryCompatibleMeter.unit}) current value: {primaryCompatibleMeter.current_value ?? '-'}</p>
-        ) : (
-          <p>No compatible meter configured yet.</p>
-        )}
+        {primaryCompatibleMeter && <p><strong>Configured meter:</strong> {primaryCompatibleMeter.meter_type} ({primaryCompatibleMeter.unit}) current value: {primaryCompatibleMeter.current_value ?? '-'}</p>}
       </section>
       <section className="card">
         <h3>Schedules</h3>
@@ -294,7 +290,18 @@ export function AssetDetailPage() {
       </section>
       <section className="card">
         <h3>Maintenance history</h3>
-        {events.map(ev => <p key={ev.id}>{new Date(ev.performed_at).toLocaleString()} - {ev.event_type} {ev.notes || ''}</p>)}
+        {events.map((ev) => (
+          <div key={ev.id} className="meter-highlight">
+            <p><strong>{new Date(ev.performed_at).toLocaleDateString()}</strong> {ev.completion_meter_value !== null ? `· Meter ${ev.completion_meter_value}` : ''}</p>
+            <div className="badges">
+              {ev.event_type.split(',').map((task) => {
+                const trimmedTask = task.trim()
+                return trimmedTask ? <span key={`${ev.id}-${trimmedTask}`} className="badge">{trimmedTask}</span> : null
+              })}
+            </div>
+            <Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}>Edit activity</Link>
+          </div>
+        ))}
       </section>
     </div>
   )
@@ -305,21 +312,23 @@ export function MeterReadingFormPage() {
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
   const [meters, setMeters] = useState([])
-  const [meterForm, setMeterForm] = useState({ unit: 'km', current_value: '' })
-  const [readingForm, setReadingForm] = useState({ meter_id: '', reading_value: '', notes: '' })
+  const [readings, setReadings] = useState([])
+  const [readingForm, setReadingForm] = useState({ meter_id: '', reading_value: '' })
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([apiFetch(`/assets/${id}`), apiFetch(`/assets/${id}/meters`)])
-      .then(([assetResult, meterResult]) => {
+    Promise.all([apiFetch(`/assets/${id}`), apiFetch(`/assets/${id}/meters`), apiFetch(`/assets/${id}/readings`)])
+      .then(([assetResult, meterResult, readingResult]) => {
         setAsset(assetResult)
         setMeters(meterResult)
+        setReadings(readingResult)
       })
       .catch((err) => setError(err.message || 'Unable to load meter details'))
   }, [id])
 
   const compatibleMeters = useMemo(() => meters.filter((meter) => meter.meter_type === asset?.interval_basis), [meters, asset])
   const primaryCompatibleMeter = compatibleMeters[compatibleMeters.length - 1]
+  const latestReading = readings[0]
 
   useEffect(() => {
     if (!primaryCompatibleMeter) {
@@ -332,13 +341,18 @@ export function MeterReadingFormPage() {
   async function submitReading(e) {
     e.preventDefault()
     let targetMeterId = readingForm.meter_id
+    const nextReadingValue = Number(readingForm.reading_value)
+    if (primaryCompatibleMeter?.current_value !== null && primaryCompatibleMeter?.current_value !== undefined && nextReadingValue < Number(primaryCompatibleMeter.current_value)) {
+      const confirmed = window.confirm('The new meter reading is lower than the current meter value. Confirm this is correct to continue.')
+      if (!confirmed) return
+    }
     if (!primaryCompatibleMeter) {
       const createdMeter = await apiFetch(`/assets/${id}/meters`, {
         method: 'POST',
         body: JSON.stringify({
           meter_type: asset.interval_basis,
-          unit: meterForm.unit,
-          current_value: meterForm.current_value ? Number(meterForm.current_value) : null,
+          unit: asset.interval_basis === 'distance' ? 'km' : asset.interval_basis,
+          current_value: null,
         }),
       })
       targetMeterId = String(createdMeter.id)
@@ -348,7 +362,7 @@ export function MeterReadingFormPage() {
       body: JSON.stringify({
         ...readingForm,
         meter_id: Number(targetMeterId),
-        reading_value: Number(readingForm.reading_value),
+        reading_value: nextReadingValue,
       }),
     })
     navigate(`/assets/${id}`)
@@ -368,21 +382,13 @@ export function MeterReadingFormPage() {
         </>
       )}
 
-      {!primaryCompatibleMeter && (
-        <>
-          <label htmlFor="meter-unit">Meter Unit</label>
-          <input id="meter-unit" required value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })} />
-
-          <label htmlFor="meter-current">Current Meter Value (optional)</label>
-          <input id="meter-current" inputMode="decimal" value={meterForm.current_value} onChange={(e) => setMeterForm({ ...meterForm, current_value: e.target.value })} />
-        </>
+      {latestReading && <p className="muted-text">Last recorded {formatReadingDate(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>}
+      {primaryCompatibleMeter?.current_value !== null && primaryCompatibleMeter?.current_value !== undefined && (
+        <p className="muted-text">Current meter value: {primaryCompatibleMeter.current_value}</p>
       )}
 
-      <label htmlFor="reading-value">Reading Value</label>
+      <label htmlFor="reading-value">New Meter Reading</label>
       <input id="reading-value" required inputMode="decimal" value={readingForm.reading_value} onChange={(e) => setReadingForm({ ...readingForm, reading_value: e.target.value })} />
-
-      <label htmlFor="reading-notes">Reading Notes</label>
-      <textarea id="reading-notes" rows={4} value={readingForm.notes} onChange={(e) => setReadingForm({ ...readingForm, notes: e.target.value })} />
 
       <div className="actions">
         <button type="submit">Save reading</button>
@@ -394,41 +400,56 @@ export function MeterReadingFormPage() {
 
 export function MaintenanceEventFormPage() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
+  const editEventId = searchParams.get('edit')
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
-  const [form, setForm] = useState({ event_type: '', completion_meter_value: '', notes: '' })
-  const [activitySuggestions, setActivitySuggestions] = useState([])
+  const [form, setForm] = useState({ completion_meter_value: '' })
+  const [taskInput, setTaskInput] = useState('')
+  const [tasks, setTasks] = useState([])
+  const [taskSuggestions, setTaskSuggestions] = useState([])
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([apiFetch(`/assets/${id}`), apiFetch('/maintenance-activities')])
+    Promise.all([apiFetch(`/assets/${id}`), apiFetch('/maintenance-tasks')])
       .then(([assetResult, suggestions]) => {
         setAsset(assetResult)
-        setActivitySuggestions(suggestions)
+        setTaskSuggestions(suggestions.map((suggestion) => suggestion.task_name))
       })
       .catch((err) => setError(err.message || 'Unable to load asset details'))
   }, [id])
+  useEffect(() => {
+    if (!editEventId) return
+    apiFetch(`/assets/${id}/maintenance-events`).then((events) => {
+      const event = events.find((candidate) => String(candidate.id) === String(editEventId))
+      if (!event) return
+      setTasks(event.event_type.split(',').map((task) => task.trim()).filter(Boolean))
+      setForm({ completion_meter_value: event.completion_meter_value ?? '' })
+    })
+  }, [id, editEventId])
 
-  function handleActivityTypeChange(nextValue) {
-    setForm((current) => ({ ...current, event_type: nextValue }))
-    const matched = activitySuggestions.find((suggestion) => suggestion.activity_name.toLowerCase() === nextValue.trim().toLowerCase())
-    if (!matched) return
-    setForm((current) => ({
-      ...current,
-      event_type: matched.activity_name,
-      completion_meter_value: matched.last_completion_meter_value ?? '',
-      notes: matched.last_notes ?? '',
-    }))
+  function addTask(taskValue) {
+    const trimmed = taskValue.trim()
+    if (!trimmed) return
+    setTasks((current) => {
+      if (current.some((task) => task.toLowerCase() === trimmed.toLowerCase())) return current
+      return [...current, trimmed]
+    })
+    setTaskInput('')
   }
 
   async function submit(e) {
     e.preventDefault()
     setError('')
-    await apiFetch(`/assets/${id}/maintenance-events`, {
-      method: 'POST',
+    const payload = {
+      event_type: tasks.join(', '),
+      notes: null,
+      completion_meter_value: form.completion_meter_value ? Number(form.completion_meter_value) : null,
+    }
+    await apiFetch(editEventId ? `/maintenance-events/${editEventId}` : `/assets/${id}/maintenance-events`, {
+      method: editEventId ? 'PUT' : 'POST',
       body: JSON.stringify({
-        ...form,
-        completion_meter_value: form.completion_meter_value ? Number(form.completion_meter_value) : null,
+        ...payload,
       }),
     })
     navigate(`/assets/${id}`)
@@ -441,26 +462,32 @@ export function MaintenanceEventFormPage() {
       {asset && <p className="hint">Capture completed work for <strong>{asset.name}</strong>.</p>}
       {error && <p className="error">{error}</p>}
 
-      <label htmlFor="event-type">Maintenance Activity</label>
+      <label htmlFor="task-input">Maintenance Tasks</label>
       <input
-        id="event-type"
-        list="maintenance-activity-options"
-        required
-        value={form.event_type}
-        onChange={(e) => handleActivityTypeChange(e.target.value)}
+        id="task-input"
+        list="task-options"
+        value={taskInput}
+        onChange={(e) => setTaskInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === ',') {
+            e.preventDefault()
+            addTask(taskInput)
+          }
+        }}
       />
-      <datalist id="maintenance-activity-options">
-        {activitySuggestions.map((suggestion) => <option key={suggestion.activity_name} value={suggestion.activity_name} />)}
+      <datalist id="task-options">
+        {taskSuggestions.map((task) => <option key={task} value={task} />)}
       </datalist>
+      <div className="badges">
+        {tasks.map((task) => <span key={task} className="badge" onClick={() => setTasks((current) => current.filter((value) => value !== task))}>{task}</span>)}
+      </div>
+      <p className="hint">Type a task and press comma to add it. Click a badge to remove it.</p>
 
       <label htmlFor="completion-meter">Meter at Completion</label>
       <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
 
-      <label htmlFor="event-notes">Notes</label>
-      <textarea id="event-notes" rows={5} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-
       <div className="actions">
-        <button type="submit">Record activity</button>
+        <button type="submit" disabled={tasks.length === 0}>{editEventId ? 'Update activity' : 'Record activity'}</button>
         <Link to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
@@ -479,12 +506,12 @@ export function ScheduleFormPage() {
   useEffect(() => {
     Promise.all([
       apiFetch(`/assets/${id}`),
-      apiFetch('/maintenance-activities'),
+      apiFetch('/maintenance-tasks'),
       apiFetch(`/assets/${id}/schedules`),
     ])
       .then(([assetResult, suggestions, schedules]) => {
         setAsset(assetResult)
-        setActivitySuggestions(suggestions)
+        setActivitySuggestions(suggestions.map((suggestion) => ({ activity_name: suggestion.task_name })))
         setExistingScheduleTitles(schedules.map((schedule) => schedule.title.trim().toLowerCase()))
       })
       .catch((err) => setError(err.message || 'Unable to load asset details'))
@@ -521,10 +548,10 @@ export function ScheduleFormPage() {
     <form onSubmit={submit} className="card narrow-card">
       <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Add scheduled maintenance activity' }]} />
       <h2>Add scheduled maintenance activity</h2>
-      {asset && <p className="hint">Create a recurring maintenance schedule for <strong>{asset.name}</strong>.</p>}
+      {asset && <p className="hint">Create a recurring schedule for one maintenance task on <strong>{asset.name}</strong>.</p>}
       {error && <p className="error">{error}</p>}
 
-      <label htmlFor="schedule-title">Schedule Title</label>
+      <label htmlFor="schedule-title">Maintenance Task</label>
       <input id="schedule-title" list="scheduled-activity-options" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       <datalist id="scheduled-activity-options">
         {activitySuggestions
