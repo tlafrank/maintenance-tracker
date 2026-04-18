@@ -14,5 +14,6 @@ fieldset { border: 1px solid #d9dfea; border-radius: .35rem; margin: .25rem 0 .9
 .radio-label input { width: auto; margin: 0; }
 .hint { margin: .2rem 0 .5rem; color: #556; font-size: .85rem; }
 .error { color: #b00; }
+.actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .75rem 0; }
 
 form.card { background: #dfe3e8; }
