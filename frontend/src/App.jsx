@@ -11,6 +11,7 @@ import {
 } from './pages/Assets'
 import { DashboardPage } from './pages/Dashboard'
 import { LoginPage, RegisterPage } from './pages/Auth'
+import { ProfilePage } from './pages/Profile'
 
 function ProtectedRoute({ children }) {
   if (!localStorage.getItem('token')) return <Navigate to="/login" replace />
@@ -35,6 +36,7 @@ export default function App() {
           <Link to="/assets">Assets</Link>
           {!me && <Link to="/login">Login</Link>}
           {!me && <Link to="/register">Register</Link>}
+          {me && <Link to="/profile">Profile</Link>}
           {me && (
             <button onClick={() => { localStorage.removeItem('token'); setMe(null); navigate('/login') }}>
               Logout
@@ -53,6 +55,7 @@ export default function App() {
         <Route path="/assets/:id/readings/new" element={<ProtectedRoute><MeterReadingFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id/maintenance-events/new" element={<ProtectedRoute><MaintenanceEventFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id/schedules/new" element={<ProtectedRoute><ScheduleFormPage /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </div>

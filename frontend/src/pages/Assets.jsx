@@ -329,28 +329,25 @@ export function MeterReadingFormPage() {
     setReadingForm((current) => ({ ...current, meter_id: String(primaryCompatibleMeter.id) }))
   }, [primaryCompatibleMeter])
 
-  async function createMeter(e) {
-    e.preventDefault()
-    await apiFetch(`/assets/${id}/meters`, {
-      method: 'POST',
-      body: JSON.stringify({
-        meter_type: asset.interval_basis,
-        unit: meterForm.unit,
-        current_value: meterForm.current_value ? Number(meterForm.current_value) : null,
-      }),
-    })
-    setMeterForm((current) => ({ ...current, current_value: '' }))
-    const refreshedMeters = await apiFetch(`/assets/${id}/meters`)
-    setMeters(refreshedMeters)
-  }
-
   async function submitReading(e) {
     e.preventDefault()
+    let targetMeterId = readingForm.meter_id
+    if (!primaryCompatibleMeter) {
+      const createdMeter = await apiFetch(`/assets/${id}/meters`, {
+        method: 'POST',
+        body: JSON.stringify({
+          meter_type: asset.interval_basis,
+          unit: meterForm.unit,
+          current_value: meterForm.current_value ? Number(meterForm.current_value) : null,
+        }),
+      })
+      targetMeterId = String(createdMeter.id)
+    }
     await apiFetch(`/assets/${id}/readings`, {
       method: 'POST',
       body: JSON.stringify({
         ...readingForm,
-        meter_id: Number(readingForm.meter_id),
+        meter_id: Number(targetMeterId),
         reading_value: Number(readingForm.reading_value),
       }),
     })
@@ -358,50 +355,40 @@ export function MeterReadingFormPage() {
   }
 
   return (
-    <div className="grid">
-      <form onSubmit={submitReading} className="card narrow-card">
-        <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Add meter reading' }]} />
-        <h2>Add meter reading</h2>
-        {error && <p className="error">{error}</p>}
-        {asset && <p className="hint">Readings here must match the asset tracking basis: <strong>{METER_TYPE_LABELS[asset.interval_basis] || asset.interval_basis}</strong>.</p>}
+    <form onSubmit={submitReading} className="card narrow-card">
+      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Add meter reading' }]} />
+      <h2>Add meter reading</h2>
+      {error && <p className="error">{error}</p>}
+      {asset && <p className="hint">Readings are tracked as {METER_TYPE_LABELS[asset.interval_basis] || asset.interval_basis} for this asset.</p>}
 
-        {!primaryCompatibleMeter ? (
-          <p>No compatible meter exists yet. Create one below first.</p>
-        ) : (
-          <>
-            <label htmlFor="reading-meter">Meter</label>
-            <input id="reading-meter" value={`${primaryCompatibleMeter.meter_type} (${primaryCompatibleMeter.unit})`} disabled />
+      {primaryCompatibleMeter && (
+        <>
+          <label htmlFor="reading-meter">Current Meter</label>
+          <input id="reading-meter" value={`${METER_TYPE_LABELS[primaryCompatibleMeter.meter_type] || primaryCompatibleMeter.meter_type} (${primaryCompatibleMeter.unit})`} disabled />
+        </>
+      )}
 
-            <label htmlFor="reading-value">Reading Value</label>
-            <input id="reading-value" required inputMode="decimal" value={readingForm.reading_value} onChange={(e) => setReadingForm({ ...readingForm, reading_value: e.target.value })} />
-
-            <label htmlFor="reading-notes">Notes</label>
-            <textarea id="reading-notes" rows={4} value={readingForm.notes} onChange={(e) => setReadingForm({ ...readingForm, notes: e.target.value })} />
-
-            <div className="actions">
-              <button type="submit">Save reading</button>
-              <Link to={`/assets/${id}`}>Cancel</Link>
-            </div>
-          </>
-        )}
-      </form>
-
-      {!primaryCompatibleMeter && asset && (
-        <form onSubmit={createMeter} className="card narrow-card">
-          <h2>Create compatible meter</h2>
-          <label htmlFor="meter-type">Meter Type</label>
-          <input id="meter-type" value={METER_TYPE_LABELS[asset.interval_basis] || asset.interval_basis} disabled />
-
-          <label htmlFor="meter-unit">Unit</label>
+      {!primaryCompatibleMeter && (
+        <>
+          <label htmlFor="meter-unit">Meter Unit</label>
           <input id="meter-unit" required value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })} />
 
-          <label htmlFor="meter-current">Current Value</label>
+          <label htmlFor="meter-current">Current Meter Value (optional)</label>
           <input id="meter-current" inputMode="decimal" value={meterForm.current_value} onChange={(e) => setMeterForm({ ...meterForm, current_value: e.target.value })} />
-
-          <button type="submit">Create meter</button>
-        </form>
+        </>
       )}
-    </div>
+
+      <label htmlFor="reading-value">Reading Value</label>
+      <input id="reading-value" required inputMode="decimal" value={readingForm.reading_value} onChange={(e) => setReadingForm({ ...readingForm, reading_value: e.target.value })} />
+
+      <label htmlFor="reading-notes">Reading Notes</label>
+      <textarea id="reading-notes" rows={4} value={readingForm.notes} onChange={(e) => setReadingForm({ ...readingForm, notes: e.target.value })} />
+
+      <div className="actions">
+        <button type="submit">Save reading</button>
+        <Link to={`/assets/${id}`}>Cancel</Link>
+      </div>
+    </form>
   )
 }
 
@@ -409,7 +396,7 @@ export function MaintenanceEventFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
-  const [form, setForm] = useState({ event_type: 'maintenance', completion_meter_value: '', notes: '' })
+  const [form, setForm] = useState({ event_type: '', completion_meter_value: '', notes: '' })
   const [activitySuggestions, setActivitySuggestions] = useState([])
   const [error, setError] = useState('')
 
@@ -485,11 +472,21 @@ export function ScheduleFormPage() {
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
   const [error, setError] = useState('')
-  const [form, setForm] = useState({ title: '', description: '', interval_mode: 'time', time_interval: 'weekly', usage_interval: '' })
+  const [activitySuggestions, setActivitySuggestions] = useState([])
+  const [existingScheduleTitles, setExistingScheduleTitles] = useState([])
+  const [form, setForm] = useState({ title: '', description: '', time_interval: '', usage_interval: '' })
 
   useEffect(() => {
-    apiFetch(`/assets/${id}`)
-      .then(setAsset)
+    Promise.all([
+      apiFetch(`/assets/${id}`),
+      apiFetch('/maintenance-activities'),
+      apiFetch(`/assets/${id}/schedules`),
+    ])
+      .then(([assetResult, suggestions, schedules]) => {
+        setAsset(assetResult)
+        setActivitySuggestions(suggestions)
+        setExistingScheduleTitles(schedules.map((schedule) => schedule.title.trim().toLowerCase()))
+      })
       .catch((err) => setError(err.message || 'Unable to load asset details'))
   }, [id])
 
@@ -497,8 +494,12 @@ export function ScheduleFormPage() {
     e.preventDefault()
     setError('')
     const selectedTimeInterval = TIME_INTERVAL_OPTIONS.find((option) => option.value === form.time_interval)
-    const intervalDays = form.interval_mode === 'time' ? selectedTimeInterval?.days ?? null : null
-    const usageIntervalValue = form.interval_mode === 'usage' && form.usage_interval ? Number(form.usage_interval) : null
+    const intervalDays = selectedTimeInterval?.days ?? null
+    const usageIntervalValue = form.usage_interval ? Number(form.usage_interval) : null
+    if (intervalDays === null && usageIntervalValue === null) {
+      setError('Select a time interval and/or enter a usage interval.')
+      return
+    }
 
     const usagePayload = asset?.interval_basis === 'hours'
       ? { interval_hours: usageIntervalValue, interval_distance: null }
@@ -524,48 +525,24 @@ export function ScheduleFormPage() {
       {error && <p className="error">{error}</p>}
 
       <label htmlFor="schedule-title">Schedule Title</label>
-      <input id="schedule-title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+      <input id="schedule-title" list="scheduled-activity-options" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+      <datalist id="scheduled-activity-options">
+        {activitySuggestions
+          .filter((suggestion) => !existingScheduleTitles.includes(suggestion.activity_name.trim().toLowerCase()))
+          .map((suggestion) => <option key={suggestion.activity_name} value={suggestion.activity_name} />)}
+      </datalist>
 
       <label htmlFor="schedule-description">Description</label>
       <textarea id="schedule-description" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
 
-      <fieldset>
-        <legend>Interval Type</legend>
-        <label className="radio-label">
-          <input
-            type="radio"
-            name="interval_mode"
-            value="time"
-            checked={form.interval_mode === 'time'}
-            onChange={(e) => setForm({ ...form, interval_mode: e.target.value })}
-          />
-          Time interval
-        </label>
-        <label className="radio-label">
-          <input
-            type="radio"
-            name="interval_mode"
-            value="usage"
-            checked={form.interval_mode === 'usage'}
-            onChange={(e) => setForm({ ...form, interval_mode: e.target.value })}
-          />
-          Usage interval ({METER_TYPE_LABELS[asset?.interval_basis] || asset?.interval_basis})
-        </label>
-      </fieldset>
+      <label htmlFor="schedule-time-interval">Time Interval (optional)</label>
+      <select id="schedule-time-interval" value={form.time_interval} onChange={(e) => setForm({ ...form, time_interval: e.target.value })}>
+        <option value="">No time interval</option>
+        {TIME_INTERVAL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
 
-      {form.interval_mode === 'time' ? (
-        <>
-          <label htmlFor="schedule-time-interval">Time Interval</label>
-          <select id="schedule-time-interval" value={form.time_interval} onChange={(e) => setForm({ ...form, time_interval: e.target.value })}>
-            {TIME_INTERVAL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-        </>
-      ) : (
-        <>
-          <label htmlFor="schedule-usage-interval">Usage Interval ({METER_TYPE_LABELS[asset?.interval_basis] || asset?.interval_basis})</label>
-          <input id="schedule-usage-interval" required inputMode="decimal" value={form.usage_interval} onChange={(e) => setForm({ ...form, usage_interval: e.target.value })} />
-        </>
-      )}
+      <label htmlFor="schedule-usage-interval">Usage Interval (optional, {METER_TYPE_LABELS[asset?.interval_basis] || asset?.interval_basis})</label>
+      <input id="schedule-usage-interval" inputMode="decimal" value={form.usage_interval} onChange={(e) => setForm({ ...form, usage_interval: e.target.value })} />
 
       <div className="actions">
         <button type="submit">Save schedule</button>

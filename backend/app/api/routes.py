@@ -31,6 +31,7 @@ from app.schemas.schemas import (
     ScheduleUpdate,
     Token,
     UserCreate,
+    UserProfileUpdate,
     UserOut,
 )
 from app.services.due_logic import evaluate_schedule_status, latest_meter_map
@@ -85,6 +86,21 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
 
 @router.get('/auth/me', response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@router.put('/auth/profile', response_model=UserOut)
+def update_profile(payload: UserProfileUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    current_user.display_name = payload.display_name.strip() or current_user.display_name
+    current_user.preferred_distance_unit = payload.preferred_distance_unit.strip() or 'km'
+
+    if payload.new_password:
+        if not payload.current_password or not verify_password(payload.current_password, current_user.password_hash):
+            raise HTTPException(status_code=400, detail='Current password is incorrect')
+        current_user.password_hash = hash_password(payload.new_password)
+
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 
@@ -165,20 +181,26 @@ def archive_asset(asset_id: int, current_user: User = Depends(get_current_user),
 
 @router.post('/assets/{asset_id}/meters', response_model=MeterOut)
 def create_meter(asset_id: int, payload: MeterCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _owned_asset(asset_id, current_user.id, db)
+    asset = _owned_asset(asset_id, current_user.id, db)
     existing_meter = db.scalar(
         select(Meter)
-        .where(Meter.asset_id == asset_id, Meter.meter_type == payload.meter_type)
+        .where(Meter.asset_id == asset_id)
         .order_by(desc(Meter.id))
     )
     if existing_meter:
+        existing_meter.meter_type = asset.interval_basis
         existing_meter.unit = payload.unit
         existing_meter.current_value = payload.current_value
         db.commit()
         db.refresh(existing_meter)
         return existing_meter
 
-    meter = Meter(asset_id=asset_id, **payload.model_dump())
+    meter = Meter(
+        asset_id=asset_id,
+        meter_type=asset.interval_basis,
+        unit=payload.unit,
+        current_value=payload.current_value,
+    )
     db.add(meter)
     db.commit()
     db.refresh(meter)
@@ -188,17 +210,29 @@ def create_meter(asset_id: int, payload: MeterCreate, current_user: User = Depen
 @router.get('/assets/{asset_id}/meters', response_model=list[MeterOut])
 def list_meters(asset_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _owned_asset(asset_id, current_user.id, db)
-    return db.scalars(select(Meter).where(Meter.asset_id == asset_id)).all()
+    meter = db.scalar(select(Meter).where(Meter.asset_id == asset_id).order_by(desc(Meter.id)))
+    return [meter] if meter else []
 
 
 @router.post('/assets/{asset_id}/readings', response_model=MeterReadingOut)
 def create_reading(asset_id: int, payload: MeterReadingCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _owned_asset(asset_id, current_user.id, db)
-    meter = db.get(Meter, payload.meter_id)
-    if not meter or meter.asset_id != asset_id:
+    asset = _owned_asset(asset_id, current_user.id, db)
+    meter = db.get(Meter, payload.meter_id) if payload.meter_id else db.scalar(
+        select(Meter).where(Meter.asset_id == asset_id).order_by(desc(Meter.id))
+    )
+    if not meter:
+        meter = Meter(
+            asset_id=asset_id,
+            meter_type=asset.interval_basis,
+            unit='km' if asset.interval_basis == 'distance' else asset.interval_basis,
+            current_value=payload.reading_value,
+        )
+        db.add(meter)
+        db.flush()
+    elif meter.asset_id != asset_id:
         raise HTTPException(status_code=404, detail='Meter not found')
     reading = MeterReading(
-        meter_id=payload.meter_id,
+        meter_id=meter.id,
         asset_id=asset_id,
         reading_value=payload.reading_value,
         reading_timestamp=payload.reading_timestamp or datetime.utcnow(),
@@ -280,7 +314,7 @@ def list_events(asset_id: int, current_user: User = Depends(get_current_user), d
 
 @router.post('/assets/{asset_id}/maintenance-events', response_model=MaintenanceEventOut)
 def create_event(asset_id: int, payload: MaintenanceEventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _owned_asset(asset_id, current_user.id, db)
+    asset = _owned_asset(asset_id, current_user.id, db)
     if payload.schedule_id:
         schedule = db.get(MaintenanceSchedule, payload.schedule_id)
         if not schedule or schedule.asset_id != asset_id:
@@ -295,6 +329,25 @@ def create_event(asset_id: int, payload: MaintenanceEventCreate, current_user: U
         completion_meter_value=payload.completion_meter_value,
     )
     db.add(event)
+    if payload.completion_meter_value is not None:
+        meter = db.scalar(select(Meter).where(Meter.asset_id == asset_id).order_by(desc(Meter.id)))
+        if not meter:
+            meter = Meter(
+                asset_id=asset_id,
+                meter_type=asset.interval_basis,
+                unit=current_user.preferred_distance_unit if asset.interval_basis == 'distance' else asset.interval_basis,
+                current_value=payload.completion_meter_value,
+            )
+            db.add(meter)
+            db.flush()
+        reading = MeterReading(
+            meter_id=meter.id,
+            asset_id=asset_id,
+            reading_value=payload.completion_meter_value,
+            notes='Auto-captured from maintenance activity',
+        )
+        meter.current_value = payload.completion_meter_value
+        db.add(reading)
     db.commit()
     db.refresh(event)
     return event

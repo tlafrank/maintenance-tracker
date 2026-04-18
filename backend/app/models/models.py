@@ -18,6 +18,7 @@ class User(TimestampMixin, Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[str] = mapped_column(String(255))
+    preferred_distance_unit: Mapped[str] = mapped_column(String(10), default='km')
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     assets: Mapped[list['Asset']] = relationship(back_populates='owner')

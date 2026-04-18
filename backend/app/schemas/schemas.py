@@ -18,6 +18,7 @@ class UserOut(BaseModel):
     id: int
     email: EmailStr
     display_name: str
+    preferred_distance_unit: str = 'km'
     is_active: bool
 
     class Config:
@@ -81,7 +82,7 @@ class MeterOut(BaseModel):
 
 
 class MeterReadingCreate(BaseModel):
-    meter_id: int
+    meter_id: int | None = None
     reading_value: float
     reading_timestamp: datetime | None = None
     notes: str | None = None
@@ -170,3 +171,10 @@ class DashboardOut(BaseModel):
     due_soon: list[DashboardItem]
     overdue: list[DashboardItem]
     recent_events: list[MaintenanceEventOut]
+
+
+class UserProfileUpdate(BaseModel):
+    display_name: str
+    preferred_distance_unit: str = 'km'
+    current_password: str | None = None
+    new_password: str | None = None
