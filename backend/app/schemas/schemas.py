@@ -24,6 +24,18 @@ class UserOut(BaseModel):
         from_attributes = True
 
 
+class AssetTypeCreate(BaseModel):
+    name: str
+
+
+class AssetTypeOut(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
 class AssetBase(BaseModel):
     name: str
     asset_type: str
@@ -32,6 +44,7 @@ class AssetBase(BaseModel):
     year: int | None = None
     registration_or_serial: str | None = None
     notes: str | None = None
+    interval_basis: str = 'distance'
 
 
 class AssetCreate(AssetBase):

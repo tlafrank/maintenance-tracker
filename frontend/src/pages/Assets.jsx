@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { apiFetch } from '../api/client'
+
+const INTERVAL_BASIS_OPTIONS = [
+  { value: 'distance', label: 'Distance' },
+  { value: 'hours', label: 'Hours' },
+  { value: 'cycles', label: 'Cycles' },
+]
 
 export function AssetListPage() {
   const [assets, setAssets] = useState([])
@@ -16,21 +22,131 @@ export function AssetListPage() {
 
 export function AssetFormPage() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ name: '', asset_type: '', manufacturer: '', model: '', year: '', registration_or_serial: '', notes: '' })
+  const [assetTypes, setAssetTypes] = useState([])
+  const [newAssetType, setNewAssetType] = useState('')
+  const [isSavingAssetType, setIsSavingAssetType] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    name: '',
+    asset_type: '',
+    manufacturer: '',
+    model: '',
+    year: '',
+    registration_or_serial: '',
+    notes: '',
+    interval_basis: 'distance',
+  })
+
+  const canSubmitAsset = useMemo(() => form.name.trim() && form.asset_type, [form])
+
+  async function refreshAssetTypes() {
+    const result = await apiFetch('/asset-types')
+    setAssetTypes(result)
+    if (!form.asset_type && result.length > 0) {
+      setForm((current) => ({ ...current, asset_type: result[0].name }))
+    }
+  }
+
+  useEffect(() => { refreshAssetTypes() }, [])
+
   async function submit(e) {
     e.preventDefault()
-    await apiFetch('/assets', { method: 'POST', body: JSON.stringify({ ...form, year: form.year ? Number(form.year) : null }) })
+    setError('')
+    await apiFetch('/assets', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...form,
+        year: form.year ? Number(form.year) : null,
+      }),
+    })
     navigate('/assets')
   }
 
+  async function addAssetType(e) {
+    e.preventDefault()
+    const trimmed = newAssetType.trim()
+    if (!trimmed) return
+
+    setError('')
+    setIsSavingAssetType(true)
+    try {
+      const created = await apiFetch('/asset-types', {
+        method: 'POST',
+        body: JSON.stringify({ name: trimmed }),
+      })
+      await refreshAssetTypes()
+      setForm((current) => ({ ...current, asset_type: created.name }))
+      setNewAssetType('')
+    } catch (err) {
+      setError(err.message || 'Unable to add asset type')
+    } finally {
+      setIsSavingAssetType(false)
+    }
+  }
+
   return (
-    <form onSubmit={submit} className="card">
-      <h2>Add asset</h2>
-      {['name', 'asset_type', 'manufacturer', 'model', 'year', 'registration_or_serial', 'notes'].map((f) => (
-        <input key={f} required={f === 'name' || f === 'asset_type'} placeholder={f} value={form[f]} onChange={e => setForm({ ...form, [f]: e.target.value })} />
-      ))}
-      <button type="submit">Save</button>
-    </form>
+    <div className="grid">
+      <form onSubmit={submit} className="card">
+        <h2>Add asset</h2>
+        {error && <p className="error">{error}</p>}
+
+        <label htmlFor="asset-name">Asset Name</label>
+        <input id="asset-name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+
+        <label htmlFor="asset-type">Asset Type</label>
+        <select id="asset-type" required value={form.asset_type} onChange={e => setForm({ ...form, asset_type: e.target.value })}>
+          {assetTypes.length === 0 && <option value="">No asset types available</option>}
+          {assetTypes.map((type) => <option key={type.id} value={type.name}>{type.name}</option>)}
+        </select>
+
+        <label htmlFor="asset-manufacturer">Manufacturer</label>
+        <input id="asset-manufacturer" value={form.manufacturer} onChange={e => setForm({ ...form, manufacturer: e.target.value })} />
+
+        <label htmlFor="asset-model">Model</label>
+        <input id="asset-model" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} />
+
+        <label htmlFor="asset-year">Year</label>
+        <input id="asset-year" value={form.year} onChange={e => setForm({ ...form, year: e.target.value })} inputMode="numeric" />
+
+        <label htmlFor="asset-registration">Registration / Serial Number</label>
+        <input id="asset-registration" value={form.registration_or_serial} onChange={e => setForm({ ...form, registration_or_serial: e.target.value })} />
+
+        <fieldset>
+          <legend>Usage Interval Basis</legend>
+          <p className="hint">Separate from elapsed time-based intervals.</p>
+          {INTERVAL_BASIS_OPTIONS.map((option) => (
+            <label key={option.value} className="radio-label">
+              <input
+                type="radio"
+                name="interval_basis"
+                value={option.value}
+                checked={form.interval_basis === option.value}
+                onChange={e => setForm({ ...form, interval_basis: e.target.value })}
+              />
+              {option.label}
+            </label>
+          ))}
+        </fieldset>
+
+        <label htmlFor="asset-notes">Notes</label>
+        <textarea id="asset-notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={5} />
+
+        <button type="submit" disabled={!canSubmitAsset}>Save</button>
+      </form>
+
+      <form onSubmit={addAssetType} className="card">
+        <h2>Add asset type</h2>
+        <label htmlFor="new-asset-type">Asset Type Name</label>
+        <input
+          id="new-asset-type"
+          required
+          value={newAssetType}
+          onChange={e => setNewAssetType(e.target.value)}
+          placeholder="e.g., Forklift"
+        />
+        <button type="submit" disabled={isSavingAssetType}>{isSavingAssetType ? 'Saving...' : 'Add type'}</button>
+      </form>
+    </div>
   )
 }
 
