@@ -222,7 +222,7 @@ export function AssetFormPage() {
         <label htmlFor="asset-notes">Notes</label>
         <textarea id="asset-notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={5} />
 
-        <button type="submit" disabled={!canSubmitAsset}>Save</button>
+        <button className="btn btn-primary" type="submit" disabled={!canSubmitAsset}>Save</button>
       </form>
 
       <form onSubmit={addAssetType} className="card">
@@ -235,7 +235,7 @@ export function AssetFormPage() {
           onChange={e => setNewAssetType(e.target.value)}
           placeholder="e.g., Forklift"
         />
-        <button type="submit" disabled={isSavingAssetType}>{isSavingAssetType ? 'Saving...' : 'Add type'}</button>
+        <button className="btn btn-outline-primary" type="submit" disabled={isSavingAssetType}>{isSavingAssetType ? 'Saving...' : 'Add type'}</button>
       </form>
     </div>
   )
@@ -279,9 +279,9 @@ export function AssetDetailPage() {
         <h3>Maintenance actions</h3>
         <p className="hint">Use actions below to record work and manage maintenance schedules.</p>
         <div className="actions">
-          <Link className="action-button" to={`/assets/${id}/readings/new`}>Add meter reading</Link>
-          <Link className="action-button" to={`/assets/${id}/schedules/new`}>Add scheduled maintenance activity</Link>
-          <Link className="action-button" to={`/assets/${id}/maintenance-events/new`}>Register maintenance activity</Link>
+          <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/readings/new`}>Add meter reading</Link>
+          <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/schedules/new`}>Add scheduled maintenance activity</Link>
+          <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/maintenance-events/new`}>Register maintenance activity</Link>
         </div>
       </section>
       <section className="card">
@@ -420,7 +420,7 @@ export function MeterReadingFormPage() {
       <input id="reading-value" required inputMode="decimal" value={readingForm.reading_value} onChange={(e) => setReadingForm({ ...readingForm, reading_value: e.target.value })} />
 
       <div className="actions">
-        <button type="submit">Save reading</button>
+        <button className="btn btn-primary" type="submit">Save reading</button>
         <Link to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
@@ -527,7 +527,7 @@ export function MaintenanceEventFormPage() {
       <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
 
       <div className="actions">
-        <button type="submit" disabled={tasks.length === 0}>{editEventId ? 'Update activity' : 'Record activity'}</button>
+        <button className="btn btn-primary" type="submit" disabled={tasks.length === 0}>{editEventId ? 'Update activity' : 'Record activity'}</button>
         <Link to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
@@ -612,7 +612,7 @@ export function ScheduleFormPage() {
       <input id="schedule-usage-interval" inputMode="decimal" value={form.usage_interval} onChange={(e) => setForm({ ...form, usage_interval: e.target.value })} />
 
       <div className="actions">
-        <button type="submit">Save schedule</button>
+        <button className="btn btn-primary" type="submit">Save schedule</button>
         <Link to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
@@ -675,7 +675,7 @@ export function ScheduleEditPage() {
       <label htmlFor="edit-schedule-hours">Interval (hours)</label>
       <input id="edit-schedule-hours" inputMode="decimal" value={form.interval_hours} onChange={(e) => setForm({ ...form, interval_hours: e.target.value })} />
       <div className="actions">
-        <button type="submit">Save changes</button>
+        <button className="btn btn-primary" type="submit">Save changes</button>
         <Link to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>

@@ -29,21 +29,23 @@ export default function App() {
   }, [])
 
   return (
-    <div className="container">
-      <header>
-        <h1>Maintenance Tracker</h1>
-        <nav>
-          <Link to="/dashboard">Dashboard</Link>
-          <Link to="/assets">Assets</Link>
-          {!me && <Link to="/login">Login</Link>}
-          {!me && <Link to="/register">Register</Link>}
-          {me && <Link to="/profile">Profile</Link>}
+    <div className="container py-4">
+      <header className="mb-4">
+        <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <h1 className="h3 mb-0">Maintenance Tracker</h1>
+          <nav className="d-flex gap-2 flex-wrap">
+            <Link className="btn btn-outline-primary btn-sm" to="/dashboard">Dashboard</Link>
+            <Link className="btn btn-outline-primary btn-sm" to="/assets">Assets</Link>
+            {!me && <Link className="btn btn-outline-secondary btn-sm" to="/login">Login</Link>}
+            {!me && <Link className="btn btn-outline-secondary btn-sm" to="/register">Register</Link>}
+            {me && <Link className="btn btn-outline-secondary btn-sm" to="/profile">Profile</Link>}
           {me && (
-            <button onClick={() => { localStorage.removeItem('token'); setMe(null); navigate('/login') }}>
+            <button className="btn btn-danger btn-sm" onClick={() => { localStorage.removeItem('token'); setMe(null); navigate('/login') }}>
               Logout
             </button>
           )}
-        </nav>
+          </nav>
+        </div>
       </header>
 
       <Routes>

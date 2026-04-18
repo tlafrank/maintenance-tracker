@@ -61,7 +61,7 @@ export function ProfilePage() {
       <input id="profile-new-password" type="password" value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} />
 
       <div className="actions">
-        <button type="submit">Save profile</button>
+        <button className="btn btn-primary" type="submit">Save profile</button>
         <Link to="/dashboard">Cancel</Link>
       </div>
     </form>
