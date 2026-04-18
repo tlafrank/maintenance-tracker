@@ -157,12 +157,7 @@ If registration still fails, inspect backend auth logs:
 docker compose logs -f backend | grep -E "app.auth|register|login"
 ```
 
-### Assets
-- `GET /api/assets`
-- `POST /api/assets`
-- `GET /api/assets/{id}`
-- `PUT /api/assets/{id}`
-- `DELETE /api/assets/{id}` (archive)
+## API surface (MVP)
 
 ## Backend restart loop troubleshooting
 
@@ -179,6 +174,23 @@ docker compose logs -f backend
 ```
 
 You should see Alembic complete and then Uvicorn start instead of repeated container exits.
+
+### Assets
+- `GET /api/assets`
+- `POST /api/assets`
+- `GET /api/assets/{id}`
+- `PUT /api/assets/{id}`
+- `DELETE /api/assets/{id}` (archive)
+
+## Registration 500 troubleshooting
+
+If `/api/auth/register` returns 500 and backend logs mention bcrypt/passlib errors, rebuild the backend image to apply the current password hashing configuration:
+
+```bash
+docker compose up -d --build backend
+```
+
+The backend now hashes passwords with `pbkdf2_sha256` (via Passlib), avoiding bcrypt backend incompatibility and bcrypt-specific length constraints.
 
 ### Maintenance events
 - `GET /api/assets/{id}/maintenance-events`
