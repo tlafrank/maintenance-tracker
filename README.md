@@ -1,5 +1,5 @@
 # Maintenance Tracker
-
+ 
 A web-first maintenance tracking application for equipment and vehicles such as:
 
 - Motorbikes
@@ -157,7 +157,12 @@ If registration still fails, inspect backend auth logs:
 docker compose logs -f backend | grep -E "app.auth|register|login"
 ```
 
----
+### Assets
+- `GET /api/assets`
+- `POST /api/assets`
+- `GET /api/assets/{id}`
+- `PUT /api/assets/{id}`
+- `DELETE /api/assets/{id}` (archive)
 
 ## Backend restart loop troubleshooting
 
@@ -175,7 +180,9 @@ docker compose logs -f backend
 
 You should see Alembic complete and then Uvicorn start instead of repeated container exits.
 
----
+### Maintenance events
+- `GET /api/assets/{id}/maintenance-events`
+- `POST /api/assets/{id}/maintenance-events`
 
 ## API surface (MVP)
 
@@ -211,7 +218,7 @@ You should see Alembic complete and then Uvicorn start instead of repeated conta
 - `GET /api/dashboard`
 - `GET /api/alerts`
 
----
+### Out of scope for MVP
 
 ## Scope
 
