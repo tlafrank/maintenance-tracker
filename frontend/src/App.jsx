@@ -8,7 +8,6 @@ import {
   MaintenanceEventFormPage,
   MeterReadingFormPage,
   ScheduleFormPage,
-  ScheduleIntervalUpdatePage,
 } from './pages/Assets'
 import { DashboardPage } from './pages/Dashboard'
 import { LoginPage, RegisterPage } from './pages/Auth'
@@ -51,7 +50,6 @@ export default function App() {
         <Route path="/assets" element={<ProtectedRoute><AssetListPage /></ProtectedRoute>} />
         <Route path="/assets/new" element={<ProtectedRoute><AssetFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id" element={<ProtectedRoute><AssetDetailPage /></ProtectedRoute>} />
-        <Route path="/assets/:id/intervals/update" element={<ProtectedRoute><ScheduleIntervalUpdatePage /></ProtectedRoute>} />
         <Route path="/assets/:id/readings/new" element={<ProtectedRoute><MeterReadingFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id/maintenance-events/new" element={<ProtectedRoute><MaintenanceEventFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id/schedules/new" element={<ProtectedRoute><ScheduleFormPage /></ProtectedRoute>} />

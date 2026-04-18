@@ -14,6 +14,17 @@ const METER_TYPE_LABELS = {
   cycles: 'Cycles',
 }
 
+const TIME_INTERVAL_OPTIONS = [
+  { value: 'weekly', label: 'Weekly', days: 7 },
+  { value: 'fortnightly', label: 'Fortnightly', days: 14 },
+  { value: 'monthly', label: 'Monthly', days: 30 },
+  { value: 'quarterly', label: 'Quarterly', days: 91 },
+  { value: 'twice-yearly', label: 'Twice-yearly', days: 182 },
+  { value: 'annually', label: 'Annually', days: 365 },
+  { value: 'two-yearly', label: 'Two-yearly', days: 730 },
+  { value: 'five-yearly', label: 'Five-yearly', days: 1825 },
+]
+
 function relativeTimeFromNow(isoDateString) {
   if (!isoDateString) return 'Unknown'
   const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
@@ -49,6 +60,17 @@ function relativeTimeFromNow(isoDateString) {
   }
   const value = Math.floor(ms / year)
   return `${value} year${value === 1 ? '' : 's'} ago`
+}
+
+function formatReadingDate(isoDateString) {
+  if (!isoDateString) return ''
+  const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
+  const normalizedDate = hasTimezone ? isoDateString : `${isoDateString}Z`
+  return new Date(normalizedDate).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
 }
 
 function Breadcrumbs({ items }) {
@@ -229,6 +251,7 @@ export function AssetDetailPage() {
   const latestReading = readings[0]
   const compatibleMeters = useMemo(() => meters.filter((meter) => meter.meter_type === asset?.interval_basis), [meters, asset])
   const primaryCompatibleMeter = compatibleMeters[compatibleMeters.length - 1]
+  const latestReadingMeter = meters.find((meter) => meter.id === latestReading?.meter_id)
 
   if (!asset) return <p>Loading...</p>
   return (
@@ -241,10 +264,9 @@ export function AssetDetailPage() {
       </section>
       <section className="card span-all">
         <h3>Maintenance actions</h3>
-        <p className="hint">Use actions below to record work and update schedules. Updating usage interval changes schedule thresholds only (it does not add a meter).</p>
+        <p className="hint">Use actions below to record work and manage maintenance schedules.</p>
         <div className="actions">
           <Link className="action-button" to={`/assets/${id}/readings/new`}>Add meter reading</Link>
-          <Link className="action-button" to={`/assets/${id}/intervals/update`}>Update schedule usage interval</Link>
           <Link className="action-button" to={`/assets/${id}/schedules/new`}>Add scheduled maintenance activity</Link>
           <Link className="action-button" to={`/assets/${id}/maintenance-events/new`}>Register maintenance activity</Link>
         </div>
@@ -254,9 +276,8 @@ export function AssetDetailPage() {
         <p className="hint">Tracking basis: <strong>{METER_TYPE_LABELS[asset.interval_basis] || asset.interval_basis}</strong>.</p>
         {latestReading ? (
           <div className="meter-highlight">
-            <p><strong>Latest reading:</strong> {latestReading.reading_value}</p>
-            <p><strong>Recorded:</strong> {new Date(latestReading.reading_timestamp).toLocaleString()}</p>
-            <p><strong>When:</strong> {relativeTimeFromNow(latestReading.reading_timestamp)}</p>
+            <p><strong>Last reading:</strong> {latestReading.reading_value} {latestReadingMeter?.unit || ''}</p>
+            <p className="muted-text">{formatReadingDate(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>
           </div>
         ) : (
           <p>No meter readings recorded yet.</p>
@@ -265,9 +286,6 @@ export function AssetDetailPage() {
           <p><strong>Configured meter:</strong> {primaryCompatibleMeter.meter_type} ({primaryCompatibleMeter.unit}) current value: {primaryCompatibleMeter.current_value ?? '-'}</p>
         ) : (
           <p>No compatible meter configured yet.</p>
-        )}
-        {compatibleMeters.length > 1 && (
-          <p className="hint">Multiple legacy meters were found. New updates will use the most recent one.</p>
         )}
       </section>
       <section className="card">
@@ -387,98 +405,6 @@ export function MeterReadingFormPage() {
   )
 }
 
-export function ScheduleIntervalUpdatePage() {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const [asset, setAsset] = useState(null)
-  const [schedules, setSchedules] = useState([])
-  const [form, setForm] = useState({ schedule_id: '', interval_days: '', interval_distance: '', interval_hours: '' })
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    Promise.all([apiFetch(`/assets/${id}`), apiFetch(`/assets/${id}/schedules`)])
-      .then(([assetResult, scheduleResult]) => {
-        setAsset(assetResult)
-        setSchedules(scheduleResult)
-        if (scheduleResult.length > 0) {
-          const firstSchedule = scheduleResult[0]
-          setForm({
-            schedule_id: String(firstSchedule.id),
-            interval_days: firstSchedule.interval_days ?? '',
-            interval_distance: firstSchedule.interval_distance ?? '',
-            interval_hours: firstSchedule.interval_hours ?? '',
-          })
-        }
-      })
-      .catch((err) => setError(err.message || 'Unable to load schedule details'))
-  }, [id])
-
-  function onScheduleChange(scheduleId) {
-    const selectedSchedule = schedules.find((schedule) => String(schedule.id) === scheduleId)
-    if (!selectedSchedule) return
-    setForm({
-      schedule_id: scheduleId,
-      interval_days: selectedSchedule.interval_days ?? '',
-      interval_distance: selectedSchedule.interval_distance ?? '',
-      interval_hours: selectedSchedule.interval_hours ?? '',
-    })
-  }
-
-  async function submit(e) {
-    e.preventDefault()
-    setError('')
-    await apiFetch(`/schedules/${form.schedule_id}/intervals`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        interval_days: form.interval_days ? Number(form.interval_days) : null,
-        interval_distance: form.interval_distance ? Number(form.interval_distance) : null,
-        interval_hours: form.interval_hours ? Number(form.interval_hours) : null,
-      }),
-    })
-    navigate(`/assets/${id}`)
-  }
-
-  return (
-    <form onSubmit={submit} className="card narrow-card">
-      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Update usage interval' }]} />
-      <h2>Update usage interval</h2>
-      {asset && <p className="hint">Adjust schedule intervals for <strong>{asset.name}</strong>.</p>}
-      <p className="hint">This updates schedule trigger thresholds only. It is different from adding a meter or meter reading.</p>
-      {error && <p className="error">{error}</p>}
-      {schedules.length === 0 ? (
-        <>
-          <p>No schedules exist for this asset yet.</p>
-          <div className="actions">
-            <Link to={`/assets/${id}/schedules/new`}>Create a schedule first</Link>
-            <Link to={`/assets/${id}`}>Back to asset</Link>
-          </div>
-        </>
-      ) : (
-        <>
-          <label htmlFor="interval-schedule">Scheduled Maintenance</label>
-          <select id="interval-schedule" value={form.schedule_id} onChange={(e) => onScheduleChange(e.target.value)}>
-            {schedules.map((schedule) => <option key={schedule.id} value={schedule.id}>{schedule.title}</option>)}
-          </select>
-
-          <label htmlFor="interval-days">Interval (days)</label>
-          <input id="interval-days" inputMode="numeric" value={form.interval_days} onChange={(e) => setForm({ ...form, interval_days: e.target.value })} />
-
-          <label htmlFor="interval-distance">Interval (distance)</label>
-          <input id="interval-distance" inputMode="decimal" value={form.interval_distance} onChange={(e) => setForm({ ...form, interval_distance: e.target.value })} />
-
-          <label htmlFor="interval-hours">Interval (hours)</label>
-          <input id="interval-hours" inputMode="decimal" value={form.interval_hours} onChange={(e) => setForm({ ...form, interval_hours: e.target.value })} />
-
-          <div className="actions">
-            <button type="submit">Save interval updates</button>
-            <Link to={`/assets/${id}`}>Cancel</Link>
-          </div>
-        </>
-      )}
-    </form>
-  )
-}
-
 export function MaintenanceEventFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -559,7 +485,7 @@ export function ScheduleFormPage() {
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
   const [error, setError] = useState('')
-  const [form, setForm] = useState({ title: '', description: '', interval_days: '', interval_distance: '', interval_hours: '' })
+  const [form, setForm] = useState({ title: '', description: '', interval_mode: 'time', time_interval: 'weekly', usage_interval: '' })
 
   useEffect(() => {
     apiFetch(`/assets/${id}`)
@@ -570,13 +496,21 @@ export function ScheduleFormPage() {
   async function submit(e) {
     e.preventDefault()
     setError('')
+    const selectedTimeInterval = TIME_INTERVAL_OPTIONS.find((option) => option.value === form.time_interval)
+    const intervalDays = form.interval_mode === 'time' ? selectedTimeInterval?.days ?? null : null
+    const usageIntervalValue = form.interval_mode === 'usage' && form.usage_interval ? Number(form.usage_interval) : null
+
+    const usagePayload = asset?.interval_basis === 'hours'
+      ? { interval_hours: usageIntervalValue, interval_distance: null }
+      : { interval_distance: usageIntervalValue, interval_hours: null }
+
     await apiFetch(`/assets/${id}/schedules`, {
       method: 'POST',
       body: JSON.stringify({
-        ...form,
-        interval_days: form.interval_days ? Number(form.interval_days) : null,
-        interval_distance: form.interval_distance ? Number(form.interval_distance) : null,
-        interval_hours: form.interval_hours ? Number(form.interval_hours) : null,
+        title: form.title,
+        description: form.description,
+        interval_days: intervalDays,
+        ...usagePayload,
       }),
     })
     navigate(`/assets/${id}`)
@@ -595,14 +529,43 @@ export function ScheduleFormPage() {
       <label htmlFor="schedule-description">Description</label>
       <textarea id="schedule-description" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
 
-      <label htmlFor="schedule-interval-days">Interval (days)</label>
-      <input id="schedule-interval-days" inputMode="numeric" value={form.interval_days} onChange={(e) => setForm({ ...form, interval_days: e.target.value })} />
+      <fieldset>
+        <legend>Interval Type</legend>
+        <label className="radio-label">
+          <input
+            type="radio"
+            name="interval_mode"
+            value="time"
+            checked={form.interval_mode === 'time'}
+            onChange={(e) => setForm({ ...form, interval_mode: e.target.value })}
+          />
+          Time interval
+        </label>
+        <label className="radio-label">
+          <input
+            type="radio"
+            name="interval_mode"
+            value="usage"
+            checked={form.interval_mode === 'usage'}
+            onChange={(e) => setForm({ ...form, interval_mode: e.target.value })}
+          />
+          Usage interval ({METER_TYPE_LABELS[asset?.interval_basis] || asset?.interval_basis})
+        </label>
+      </fieldset>
 
-      <label htmlFor="schedule-interval-distance">Interval (distance)</label>
-      <input id="schedule-interval-distance" inputMode="decimal" value={form.interval_distance} onChange={(e) => setForm({ ...form, interval_distance: e.target.value })} />
-
-      <label htmlFor="schedule-interval-hours">Interval (hours)</label>
-      <input id="schedule-interval-hours" inputMode="decimal" value={form.interval_hours} onChange={(e) => setForm({ ...form, interval_hours: e.target.value })} />
+      {form.interval_mode === 'time' ? (
+        <>
+          <label htmlFor="schedule-time-interval">Time Interval</label>
+          <select id="schedule-time-interval" value={form.time_interval} onChange={(e) => setForm({ ...form, time_interval: e.target.value })}>
+            {TIME_INTERVAL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </>
+      ) : (
+        <>
+          <label htmlFor="schedule-usage-interval">Usage Interval ({METER_TYPE_LABELS[asset?.interval_basis] || asset?.interval_basis})</label>
+          <input id="schedule-usage-interval" required inputMode="decimal" value={form.usage_interval} onChange={(e) => setForm({ ...form, usage_interval: e.target.value })} />
+        </>
+      )}
 
       <div className="actions">
         <button type="submit">Save schedule</button>

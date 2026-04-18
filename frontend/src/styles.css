@@ -14,6 +14,7 @@ fieldset { border: 1px solid #d9dfea; border-radius: .35rem; margin: .25rem 0 .9
 .radio-label { display: flex; align-items: center; gap: .45rem; font-weight: 500; margin: .35rem 0; }
 .radio-label input { width: auto; margin: 0; }
 .hint { margin: .2rem 0 .5rem; color: #556; font-size: .85rem; }
+.muted-text { color: #667; font-size: .9rem; margin-top: -.25rem; }
 .error { color: #b00; }
 .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .75rem 0; }
 .action-button { min-width: 220px; text-align: center; flex: 1 1 220px; }
