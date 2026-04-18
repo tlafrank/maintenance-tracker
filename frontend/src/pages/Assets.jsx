@@ -16,7 +16,9 @@ const METER_TYPE_LABELS = {
 
 function relativeTimeFromNow(isoDateString) {
   if (!isoDateString) return 'Unknown'
-  const ms = Date.now() - new Date(isoDateString).getTime()
+  const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
+  const normalizedDate = hasTimezone ? isoDateString : `${isoDateString}Z`
+  const ms = Date.now() - new Date(normalizedDate).getTime()
   if (Number.isNaN(ms) || ms < 0) return 'Just now'
   const minute = 60 * 1000
   const hour = 60 * minute
@@ -211,8 +213,6 @@ export function AssetDetailPage() {
   const [readings, setReadings] = useState([])
   const [schedules, setSchedules] = useState([])
   const [events, setEvents] = useState([])
-  const [meterForm, setMeterForm] = useState({ unit: 'km', current_value: '' })
-  const [readingForm, setReadingForm] = useState({ meter_id: '', reading_value: '', notes: '' })
 
   async function refresh() {
     const [a, m, r, s, e] = await Promise.all([
@@ -226,30 +226,28 @@ export function AssetDetailPage() {
   }
 
   useEffect(() => { refresh() }, [id])
-  const compatibleMeters = useMemo(
-    () => meters.filter((meter) => meter.meter_type === asset?.interval_basis),
-    [meters, asset],
-  )
   const latestReading = readings[0]
-
-  useEffect(() => {
-    if (compatibleMeters.length === 0) {
-      setReadingForm((current) => ({ ...current, meter_id: '' }))
-      return
-    }
-    setReadingForm((current) => ({
-      ...current,
-      meter_id: current.meter_id || String(compatibleMeters[0].id),
-    }))
-  }, [compatibleMeters])
+  const compatibleMeters = useMemo(() => meters.filter((meter) => meter.meter_type === asset?.interval_basis), [meters, asset])
 
   if (!asset) return <p>Loading...</p>
   return (
     <div className="grid">
-      <section className="card">
+      <section className="card span-all">
         <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset.name }]} />
+        <h2>{asset.name}</h2>
+        <p>{asset.asset_type}</p>
+        {asset.notes && <p>{asset.notes}</p>}
       </section>
-      <section className="card"><h2>{asset.name}</h2><p>{asset.asset_type}</p><p>{asset.notes}</p></section>
+      <section className="card span-all">
+        <h3>Maintenance actions</h3>
+        <p className="hint">Use actions below to record work and update schedules. Updating usage interval changes schedule thresholds only (it does not add a meter).</p>
+        <div className="actions">
+          <Link className="action-button" to={`/assets/${id}/readings/new`}>Add meter reading</Link>
+          <Link className="action-button" to={`/assets/${id}/intervals/update`}>Update schedule usage interval</Link>
+          <Link className="action-button" to={`/assets/${id}/schedules/new`}>Add scheduled maintenance activity</Link>
+          <Link className="action-button" to={`/assets/${id}/maintenance-events/new`}>Register maintenance activity</Link>
+        </div>
+      </section>
       <section className="card">
         <h3>Meters</h3>
         <p className="hint">Tracking basis: <strong>{METER_TYPE_LABELS[asset.interval_basis] || asset.interval_basis}</strong>.</p>
@@ -262,71 +260,10 @@ export function AssetDetailPage() {
         ) : (
           <p>No meter readings recorded yet.</p>
         )}
-        <form onSubmit={async e => {
-          e.preventDefault()
-          await apiFetch(`/assets/${id}/meters`, {
-            method: 'POST',
-            body: JSON.stringify({
-              meter_type: asset.interval_basis,
-              unit: meterForm.unit,
-              current_value: meterForm.current_value ? Number(meterForm.current_value) : null,
-            }),
-          })
-          setMeterForm({ unit: meterForm.unit, current_value: '' })
-          refresh()
-        }}>
-          <h4>Add compatible meter</h4>
-          <label htmlFor="meter-type">Meter Type</label>
-          <input id="meter-type" value={METER_TYPE_LABELS[asset.interval_basis] || asset.interval_basis} disabled />
-
-          <label htmlFor="meter-unit">Unit</label>
-          <input id="meter-unit" required value={meterForm.unit} onChange={e => setMeterForm({ ...meterForm, unit: e.target.value })} />
-
-          <label htmlFor="meter-current">Current Value</label>
-          <input id="meter-current" inputMode="decimal" value={meterForm.current_value} onChange={e => setMeterForm({ ...meterForm, current_value: e.target.value })} />
-          <button type="submit">Add meter</button>
-        </form>
-        <form onSubmit={async e => {
-          e.preventDefault()
-          await apiFetch(`/assets/${id}/readings`, {
-            method: 'POST',
-            body: JSON.stringify({
-              ...readingForm,
-              meter_id: Number(readingForm.meter_id),
-              reading_value: Number(readingForm.reading_value),
-            }),
-          })
-          setReadingForm({ meter_id: compatibleMeters[0] ? String(compatibleMeters[0].id) : '', reading_value: '', notes: '' })
-          refresh()
-        }}>
-          <h4>Add meter reading</h4>
-          {compatibleMeters.length === 0 ? (
-            <p className="hint">Create a {asset.interval_basis} meter first before adding readings.</p>
-          ) : (
-            <>
-              <label htmlFor="reading-meter">Meter</label>
-              <select id="reading-meter" value={readingForm.meter_id} onChange={e => setReadingForm({ ...readingForm, meter_id: e.target.value })}>
-                {compatibleMeters.map((meter) => <option key={meter.id} value={meter.id}>{meter.meter_type} ({meter.unit})</option>)}
-              </select>
-
-              <label htmlFor="reading-value">Reading Value</label>
-              <input id="reading-value" required inputMode="decimal" value={readingForm.reading_value} onChange={e => setReadingForm({ ...readingForm, reading_value: e.target.value })} />
-
-              <label htmlFor="reading-notes">Notes</label>
-              <input id="reading-notes" value={readingForm.notes} onChange={e => setReadingForm({ ...readingForm, notes: e.target.value })} />
-
-              <button type="submit">Add reading</button>
-            </>
-          )}
-        </form>
-      </section>
-      <section className="card">
-        <h3>Maintenance actions</h3>
-        <div className="actions">
-          <Link className="action-button" to={`/assets/${id}/intervals/update`}>Update usage interval</Link>
-          <Link className="action-button" to={`/assets/${id}/schedules/new`}>Add scheduled maintenance activity</Link>
-          <Link className="action-button" to={`/assets/${id}/maintenance-events/new`}>Register maintenance activity</Link>
-        </div>
+        <p><strong>Configured compatible meters:</strong> {compatibleMeters.length}</p>
+        {compatibleMeters.map((meter) => (
+          <p key={meter.id}>{meter.meter_type} meter ({meter.unit}) current value: {meter.current_value ?? '-'}</p>
+        ))}
       </section>
       <section className="card">
         <h3>Schedules</h3>
@@ -336,6 +273,112 @@ export function AssetDetailPage() {
         <h3>Maintenance history</h3>
         {events.map(ev => <p key={ev.id}>{new Date(ev.performed_at).toLocaleString()} - {ev.event_type} {ev.notes || ''}</p>)}
       </section>
+    </div>
+  )
+}
+
+export function MeterReadingFormPage() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const [asset, setAsset] = useState(null)
+  const [meters, setMeters] = useState([])
+  const [meterForm, setMeterForm] = useState({ unit: 'km', current_value: '' })
+  const [readingForm, setReadingForm] = useState({ meter_id: '', reading_value: '', notes: '' })
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    Promise.all([apiFetch(`/assets/${id}`), apiFetch(`/assets/${id}/meters`)])
+      .then(([assetResult, meterResult]) => {
+        setAsset(assetResult)
+        setMeters(meterResult)
+      })
+      .catch((err) => setError(err.message || 'Unable to load meter details'))
+  }, [id])
+
+  const compatibleMeters = useMemo(() => meters.filter((meter) => meter.meter_type === asset?.interval_basis), [meters, asset])
+
+  useEffect(() => {
+    if (compatibleMeters.length === 0) {
+      setReadingForm((current) => ({ ...current, meter_id: '' }))
+      return
+    }
+    setReadingForm((current) => ({ ...current, meter_id: current.meter_id || String(compatibleMeters[0].id) }))
+  }, [compatibleMeters])
+
+  async function createMeter(e) {
+    e.preventDefault()
+    await apiFetch(`/assets/${id}/meters`, {
+      method: 'POST',
+      body: JSON.stringify({
+        meter_type: asset.interval_basis,
+        unit: meterForm.unit,
+        current_value: meterForm.current_value ? Number(meterForm.current_value) : null,
+      }),
+    })
+    setMeterForm((current) => ({ ...current, current_value: '' }))
+    const refreshedMeters = await apiFetch(`/assets/${id}/meters`)
+    setMeters(refreshedMeters)
+  }
+
+  async function submitReading(e) {
+    e.preventDefault()
+    await apiFetch(`/assets/${id}/readings`, {
+      method: 'POST',
+      body: JSON.stringify({
+        ...readingForm,
+        meter_id: Number(readingForm.meter_id),
+        reading_value: Number(readingForm.reading_value),
+      }),
+    })
+    navigate(`/assets/${id}`)
+  }
+
+  return (
+    <div className="grid">
+      <form onSubmit={submitReading} className="card narrow-card">
+        <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Add meter reading' }]} />
+        <h2>Add meter reading</h2>
+        {error && <p className="error">{error}</p>}
+        {asset && <p className="hint">Readings here must match the asset tracking basis: <strong>{METER_TYPE_LABELS[asset.interval_basis] || asset.interval_basis}</strong>.</p>}
+
+        {compatibleMeters.length === 0 ? (
+          <p>No compatible meter exists yet. Create one below first.</p>
+        ) : (
+          <>
+            <label htmlFor="reading-meter">Meter</label>
+            <select id="reading-meter" value={readingForm.meter_id} onChange={(e) => setReadingForm({ ...readingForm, meter_id: e.target.value })}>
+              {compatibleMeters.map((meter) => <option key={meter.id} value={meter.id}>{meter.meter_type} ({meter.unit})</option>)}
+            </select>
+
+            <label htmlFor="reading-value">Reading Value</label>
+            <input id="reading-value" required inputMode="decimal" value={readingForm.reading_value} onChange={(e) => setReadingForm({ ...readingForm, reading_value: e.target.value })} />
+
+            <label htmlFor="reading-notes">Notes</label>
+            <textarea id="reading-notes" rows={4} value={readingForm.notes} onChange={(e) => setReadingForm({ ...readingForm, notes: e.target.value })} />
+
+            <div className="actions">
+              <button type="submit">Save reading</button>
+              <Link to={`/assets/${id}`}>Cancel</Link>
+            </div>
+          </>
+        )}
+      </form>
+
+      {compatibleMeters.length === 0 && asset && (
+        <form onSubmit={createMeter} className="card narrow-card">
+          <h2>Create compatible meter</h2>
+          <label htmlFor="meter-type">Meter Type</label>
+          <input id="meter-type" value={METER_TYPE_LABELS[asset.interval_basis] || asset.interval_basis} disabled />
+
+          <label htmlFor="meter-unit">Unit</label>
+          <input id="meter-unit" required value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })} />
+
+          <label htmlFor="meter-current">Current Value</label>
+          <input id="meter-current" inputMode="decimal" value={meterForm.current_value} onChange={(e) => setMeterForm({ ...meterForm, current_value: e.target.value })} />
+
+          <button type="submit">Create meter</button>
+        </form>
+      )}
     </div>
   )
 }
@@ -396,6 +439,7 @@ export function ScheduleIntervalUpdatePage() {
       <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Update usage interval' }]} />
       <h2>Update usage interval</h2>
       {asset && <p className="hint">Adjust schedule intervals for <strong>{asset.name}</strong>.</p>}
+      <p className="hint">This updates schedule trigger thresholds only. It is different from adding a meter or meter reading.</p>
       {error && <p className="error">{error}</p>}
       {schedules.length === 0 ? (
         <>

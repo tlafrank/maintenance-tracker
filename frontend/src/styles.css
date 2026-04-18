@@ -7,6 +7,7 @@ a, button { padding: .4rem .7rem; border-radius: .35rem; text-decoration: none; 
 button:disabled { opacity: .6; cursor: not-allowed; }
 .card { background: white; border-radius: .5rem; padding: 1rem; margin: .75rem 0; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .75rem; }
+.span-all { grid-column: 1 / -1; }
 label, legend { font-weight: 600; font-size: .9rem; color: #324; }
 input, select, textarea { display: block; width: 100%; margin: .35rem 0 .75rem; padding: .5rem; box-sizing: border-box; border: 1px solid #ccd; border-radius: .35rem; font: inherit; }
 fieldset { border: 1px solid #d9dfea; border-radius: .35rem; margin: .25rem 0 .9rem; padding: .5rem .75rem; }
