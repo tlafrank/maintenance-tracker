@@ -1,5 +1,5 @@
 # Maintenance Tracker
-
+ 
 A web-first maintenance tracking application for equipment and vehicles such as:
 
 - Motorbikes
@@ -157,7 +157,7 @@ If registration still fails, inspect backend auth logs:
 docker compose logs -f backend | grep -E "app.auth|register|login"
 ```
 
----
+## API surface (MVP)
 
 ## Backend restart loop troubleshooting
 
@@ -175,7 +175,12 @@ docker compose logs -f backend
 
 You should see Alembic complete and then Uvicorn start instead of repeated container exits.
 
----
+### Assets
+- `GET /api/assets`
+- `POST /api/assets`
+- `GET /api/assets/{id}`
+- `PUT /api/assets/{id}`
+- `DELETE /api/assets/{id}` (archive)
 
 ## Registration 500 troubleshooting
 
@@ -187,7 +192,9 @@ docker compose up -d --build backend
 
 The backend now hashes passwords with `pbkdf2_sha256` (via Passlib), avoiding bcrypt backend incompatibility and bcrypt-specific length constraints.
 
----
+### Maintenance events
+- `GET /api/assets/{id}/maintenance-events`
+- `POST /api/assets/{id}/maintenance-events`
 
 ## API surface (MVP)
 
@@ -223,7 +230,7 @@ The backend now hashes passwords with `pbkdf2_sha256` (via Passlib), avoiding bc
 - `GET /api/dashboard`
 - `GET /api/alerts`
 
----
+### Out of scope for MVP
 
 ## Scope
 
