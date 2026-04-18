@@ -67,9 +67,22 @@ function formatReadingDate(isoDateString) {
   const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
   const normalizedDate = hasTimezone ? isoDateString : `${isoDateString}Z`
   return new Date(normalizedDate).toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'long',
+    day: '2-digit',
+    month: 'short',
     year: 'numeric',
+  })
+}
+
+function formatReadingDateTime(isoDateString) {
+  if (!isoDateString) return ''
+  const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
+  const normalizedDate = hasTimezone ? isoDateString : `${isoDateString}Z`
+  return new Date(normalizedDate).toLocaleString(undefined, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   })
 }
 
@@ -282,24 +295,40 @@ export function AssetDetailPage() {
         ) : (
           <p>No meter readings recorded yet.</p>
         )}
-        {primaryCompatibleMeter && <p><strong>Configured meter:</strong> {primaryCompatibleMeter.meter_type} ({primaryCompatibleMeter.unit}) current value: {primaryCompatibleMeter.current_value ?? '-'}</p>}
       </section>
       <section className="card">
         <h3>Schedules</h3>
-        {schedules.map(s => <p key={s.id}>{s.title} (days:{s.interval_days || '-'} km:{s.interval_distance || '-'} hrs:{s.interval_hours || '-'})</p>)}
+        {schedules.map((schedule) => {
+          const lastMatchingEvent = events.find((event) => event.event_type.split(',').map((task) => task.trim().toLowerCase()).includes(schedule.title.trim().toLowerCase()))
+          const referenceDate = lastMatchingEvent ? new Date(lastMatchingEvent.performed_at) : new Date()
+          const dueDate = schedule.interval_days ? new Date(referenceDate.getTime() + (schedule.interval_days * 24 * 60 * 60 * 1000)) : null
+          const daysLeft = dueDate ? Math.ceil((dueDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null
+          const status = daysLeft === null ? 'future' : (daysLeft < 0 ? 'overdue' : (daysLeft <= 14 ? 'upcoming' : 'future'))
+          return (
+            <div key={schedule.id} className="schedule-card">
+              <Link to={`/assets/${id}/schedules/${schedule.id}/edit`}><strong>{schedule.title}</strong></Link>
+              <p className="muted-text">
+                {schedule.interval_days ? `Every ${schedule.interval_days} day(s)` : ''}
+                {schedule.interval_distance ? ` · ${schedule.interval_distance} usage` : ''}
+                {schedule.interval_hours ? ` · ${schedule.interval_hours} hours` : ''}
+              </p>
+              {daysLeft !== null && <p className="muted-text">{daysLeft} day(s) left until due</p>}
+              <span className={`badge status-${status}`}>{status}</span>
+            </div>
+          )
+        })}
       </section>
       <section className="card">
         <h3>Maintenance history</h3>
         {events.map((ev) => (
           <div key={ev.id} className="meter-highlight">
-            <p><strong>{new Date(ev.performed_at).toLocaleDateString()}</strong> {ev.completion_meter_value !== null ? `· Meter ${ev.completion_meter_value}` : ''}</p>
+            <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDateTime(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `· Meter ${ev.completion_meter_value}` : ''}</p>
             <div className="badges">
               {ev.event_type.split(',').map((task) => {
                 const trimmedTask = task.trim()
                 return trimmedTask ? <span key={`${ev.id}-${trimmedTask}`} className="badge">{trimmedTask}</span> : null
               })}
             </div>
-            <Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}>Edit activity</Link>
           </div>
         ))}
       </section>
@@ -382,7 +411,7 @@ export function MeterReadingFormPage() {
         </>
       )}
 
-      {latestReading && <p className="muted-text">Last recorded {formatReadingDate(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>}
+      {latestReading && <p className="muted-text">Last recorded {formatReadingDateTime(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>}
       {primaryCompatibleMeter?.current_value !== null && primaryCompatibleMeter?.current_value !== undefined && (
         <p className="muted-text">Current meter value: {primaryCompatibleMeter.current_value}</p>
       )}
@@ -479,7 +508,18 @@ export function MaintenanceEventFormPage() {
         {taskSuggestions.map((task) => <option key={task} value={task} />)}
       </datalist>
       <div className="badges">
-        {tasks.map((task) => <span key={task} className="badge" onClick={() => setTasks((current) => current.filter((value) => value !== task))}>{task}</span>)}
+        {tasks.map((task) => (
+          <span key={task} className="badge">
+            {task}
+            <button
+              type="button"
+              className="badge-remove"
+              onClick={() => setTasks((current) => current.filter((value) => value !== task))}
+            >
+              ×
+            </button>
+          </span>
+        ))}
       </div>
       <p className="hint">Type a task and press comma to add it. Click a badge to remove it.</p>
 
@@ -573,6 +613,69 @@ export function ScheduleFormPage() {
 
       <div className="actions">
         <button type="submit">Save schedule</button>
+        <Link to={`/assets/${id}`}>Cancel</Link>
+      </div>
+    </form>
+  )
+}
+
+export function ScheduleEditPage() {
+  const { id, scheduleId } = useParams()
+  const navigate = useNavigate()
+  const [form, setForm] = useState({ title: '', description: '', interval_days: '', interval_distance: '', interval_hours: '' })
+  const [schedule, setSchedule] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    apiFetch(`/assets/${id}/schedules`)
+      .then((schedules) => {
+        const found = schedules.find((candidate) => String(candidate.id) === String(scheduleId))
+        if (!found) throw new Error('Schedule not found')
+        setSchedule(found)
+        setForm({
+          title: found.title,
+          description: found.description || '',
+          interval_days: found.interval_days ?? '',
+          interval_distance: found.interval_distance ?? '',
+          interval_hours: found.interval_hours ?? '',
+        })
+      })
+      .catch((err) => setError(err.message || 'Unable to load schedule'))
+  }, [id, scheduleId])
+
+  async function submit(e) {
+    e.preventDefault()
+    if (!schedule) return
+    await apiFetch(`/schedules/${schedule.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...schedule,
+        ...form,
+        interval_days: form.interval_days ? Number(form.interval_days) : null,
+        interval_distance: form.interval_distance ? Number(form.interval_distance) : null,
+        interval_hours: form.interval_hours ? Number(form.interval_hours) : null,
+      }),
+    })
+    navigate(`/assets/${id}`)
+  }
+
+  return (
+    <form onSubmit={submit} className="card narrow-card">
+      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: 'Edit scheduled task' }]} />
+      <h2>Edit scheduled maintenance task</h2>
+      {error && <p className="error">{error}</p>}
+      <label htmlFor="edit-schedule-title">Maintenance Task</label>
+      <input id="edit-schedule-title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+      <label htmlFor="edit-schedule-description">Description</label>
+      <textarea id="edit-schedule-description" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+      <label htmlFor="edit-schedule-days">Interval (days)</label>
+      <input id="edit-schedule-days" inputMode="numeric" value={form.interval_days} onChange={(e) => setForm({ ...form, interval_days: e.target.value })} />
+      <label htmlFor="edit-schedule-usage">Interval (usage)</label>
+      <input id="edit-schedule-usage" inputMode="decimal" value={form.interval_distance} onChange={(e) => setForm({ ...form, interval_distance: e.target.value })} />
+      <label htmlFor="edit-schedule-hours">Interval (hours)</label>
+      <input id="edit-schedule-hours" inputMode="decimal" value={form.interval_hours} onChange={(e) => setForm({ ...form, interval_hours: e.target.value })} />
+      <div className="actions">
+        <button type="submit">Save changes</button>
         <Link to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>

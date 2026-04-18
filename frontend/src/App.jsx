@@ -7,6 +7,7 @@ import {
   AssetListPage,
   MaintenanceEventFormPage,
   MeterReadingFormPage,
+  ScheduleEditPage,
   ScheduleFormPage,
 } from './pages/Assets'
 import { DashboardPage } from './pages/Dashboard'
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="/assets/:id/readings/new" element={<ProtectedRoute><MeterReadingFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id/maintenance-events/new" element={<ProtectedRoute><MaintenanceEventFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id/schedules/new" element={<ProtectedRoute><ScheduleFormPage /></ProtectedRoute>} />
+        <Route path="/assets/:id/schedules/:scheduleId/edit" element={<ProtectedRoute><ScheduleEditPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
