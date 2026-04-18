@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import get_db
-from app.models.models import Asset, MaintenanceEvent, MaintenanceSchedule, Meter, MeterReading, User
+from app.models.models import Asset, AssetType, MaintenanceEvent, MaintenanceSchedule, Meter, MeterReading, User
 from app.schemas.schemas import (
     AssetCreate,
     AssetOut,
+    AssetTypeCreate,
+    AssetTypeOut,
     AssetUpdate,
     DashboardItem,
     DashboardOut,
@@ -84,6 +86,30 @@ def me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+
+
+@router.get('/asset-types', response_model=list[AssetTypeOut])
+def list_asset_types(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return db.scalars(select(AssetType).order_by(AssetType.name)).all()
+
+
+@router.post('/asset-types', response_model=AssetTypeOut)
+def create_asset_type(payload: AssetTypeCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    normalized_name = payload.name.strip()
+    if not normalized_name:
+        raise HTTPException(status_code=400, detail='Asset type name is required')
+
+    existing = db.scalar(select(AssetType).where(AssetType.name == normalized_name))
+    if existing:
+        raise HTTPException(status_code=400, detail='Asset type already exists')
+
+    asset_type = AssetType(name=normalized_name)
+    db.add(asset_type)
+    db.commit()
+    db.refresh(asset_type)
+    return asset_type
+
+
 @router.get('/assets', response_model=list[AssetOut])
 def list_assets(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.scalars(select(Asset).where(Asset.owner_user_id == current_user.id, Asset.archived_at.is_(None))).all()
@@ -91,6 +117,10 @@ def list_assets(current_user: User = Depends(get_current_user), db: Session = De
 
 @router.post('/assets', response_model=AssetOut)
 def create_asset(payload: AssetCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    asset_type = db.scalar(select(AssetType).where(AssetType.name == payload.asset_type))
+    if not asset_type:
+        raise HTTPException(status_code=400, detail='Select a valid asset type')
+
     asset = Asset(owner_user_id=current_user.id, **payload.model_dump())
     db.add(asset)
     db.commit()
@@ -113,6 +143,9 @@ def get_asset(asset_id: int, current_user: User = Depends(get_current_user), db:
 @router.put('/assets/{asset_id}', response_model=AssetOut)
 def update_asset(asset_id: int, payload: AssetUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     asset = _owned_asset(asset_id, current_user.id, db)
+    asset_type = db.scalar(select(AssetType).where(AssetType.name == payload.asset_type))
+    if not asset_type:
+        raise HTTPException(status_code=400, detail='Select a valid asset type')
     for key, value in payload.model_dump().items():
         setattr(asset, key, value)
     db.commit()

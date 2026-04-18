@@ -23,6 +23,13 @@ class User(TimestampMixin, Base):
     assets: Mapped[list['Asset']] = relationship(back_populates='owner')
 
 
+class AssetType(TimestampMixin, Base):
+    __tablename__ = 'asset_types'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+
+
 class Asset(TimestampMixin, Base):
     __tablename__ = 'assets'
 
@@ -35,6 +42,7 @@ class Asset(TimestampMixin, Base):
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     registration_or_serial: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    interval_basis: Mapped[str] = mapped_column(String(20), default='distance')
     archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     owner: Mapped['User'] = relationship(back_populates='assets')
