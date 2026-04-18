@@ -156,14 +156,8 @@ export function AssetDetailPage() {
   const [meters, setMeters] = useState([])
   const [schedules, setSchedules] = useState([])
   const [events, setEvents] = useState([])
-  const [showScheduleForm, setShowScheduleForm] = useState(false)
-  const [showEventForm, setShowEventForm] = useState(false)
-  const [showIntervalUpdateForm, setShowIntervalUpdateForm] = useState(false)
   const [meterForm, setMeterForm] = useState({ meter_type: 'distance', unit: 'km', current_value: '' })
   const [readingForm, setReadingForm] = useState({ meter_id: '', reading_value: '', notes: '' })
-  const [scheduleForm, setScheduleForm] = useState({ title: '', interval_days: '', interval_distance: '', interval_hours: '' })
-  const [eventForm, setEventForm] = useState({ event_type: 'maintenance', notes: '', completion_meter_value: '' })
-  const [intervalUpdateForm, setIntervalUpdateForm] = useState({ schedule_id: '', interval_days: '', interval_distance: '', interval_hours: '' })
 
   async function refresh() {
     const [a, m, s, e] = await Promise.all([
@@ -176,33 +170,6 @@ export function AssetDetailPage() {
   }
 
   useEffect(() => { refresh() }, [id])
-  useEffect(() => {
-    if (schedules.length === 0) {
-      setIntervalUpdateForm({ schedule_id: '', interval_days: '', interval_distance: '', interval_hours: '' })
-      return
-    }
-    setIntervalUpdateForm((current) => {
-      const selectedScheduleId = current.schedule_id || String(schedules[0].id)
-      const selectedSchedule = schedules.find((schedule) => String(schedule.id) === selectedScheduleId) || schedules[0]
-      return {
-        schedule_id: String(selectedSchedule.id),
-        interval_days: selectedSchedule.interval_days ?? '',
-        interval_distance: selectedSchedule.interval_distance ?? '',
-        interval_hours: selectedSchedule.interval_hours ?? '',
-      }
-    })
-  }, [schedules])
-
-  function selectIntervalSchedule(scheduleId) {
-    const selectedSchedule = schedules.find((schedule) => String(schedule.id) === scheduleId)
-    if (!selectedSchedule) return
-    setIntervalUpdateForm({
-      schedule_id: scheduleId,
-      interval_days: selectedSchedule.interval_days ?? '',
-      interval_distance: selectedSchedule.interval_distance ?? '',
-      interval_hours: selectedSchedule.interval_hours ?? '',
-    })
-  }
 
   if (!asset) return <p>Loading...</p>
   return (
@@ -228,69 +195,213 @@ export function AssetDetailPage() {
         <h3>Schedules</h3>
         {schedules.map(s => <p key={s.id}>{s.title} (days:{s.interval_days || '-'} km:{s.interval_distance || '-'} hrs:{s.interval_hours || '-'})</p>)}
         <div className="actions">
-          <button type="button" onClick={() => setShowIntervalUpdateForm((current) => !current)} disabled={schedules.length === 0}>
-            {showIntervalUpdateForm ? 'Close usage interval form' : 'Update usage interval'}
-          </button>
-          <button type="button" onClick={() => setShowScheduleForm((current) => !current)}>
-            {showScheduleForm ? 'Close schedule form' : 'Add scheduled maintenance activity'}
-          </button>
+          <Link to={`/assets/${id}/intervals/update`}>Update usage interval</Link>
+          <Link to={`/assets/${id}/schedules/new`}>Add scheduled maintenance activity</Link>
         </div>
-        {showIntervalUpdateForm && schedules.length > 0 && (
-          <form onSubmit={async e => {
-            e.preventDefault()
-            const selectedSchedule = schedules.find((schedule) => String(schedule.id) === intervalUpdateForm.schedule_id)
-            if (!selectedSchedule) return
-            await apiFetch(`/schedules/${selectedSchedule.id}`, {
-              method: 'PUT',
-              body: JSON.stringify({
-                ...selectedSchedule,
-                interval_days: intervalUpdateForm.interval_days ? Number(intervalUpdateForm.interval_days) : null,
-                interval_distance: intervalUpdateForm.interval_distance ? Number(intervalUpdateForm.interval_distance) : null,
-                interval_hours: intervalUpdateForm.interval_hours ? Number(intervalUpdateForm.interval_hours) : null,
-              }),
-            })
-            setShowIntervalUpdateForm(false)
-            refresh()
-          }}>
-            <select
-              value={intervalUpdateForm.schedule_id}
-              onChange={e => selectIntervalSchedule(e.target.value)}
-            >
-              {schedules.map((schedule) => <option key={schedule.id} value={schedule.id}>{schedule.title}</option>)}
-            </select>
-            <input value={intervalUpdateForm.interval_days} onChange={e => setIntervalUpdateForm({ ...intervalUpdateForm, interval_days: e.target.value })} placeholder="interval days" />
-            <input value={intervalUpdateForm.interval_distance} onChange={e => setIntervalUpdateForm({ ...intervalUpdateForm, interval_distance: e.target.value })} placeholder="interval distance" />
-            <input value={intervalUpdateForm.interval_hours} onChange={e => setIntervalUpdateForm({ ...intervalUpdateForm, interval_hours: e.target.value })} placeholder="interval hours" />
-            <button type="submit">Save interval update</button>
-          </form>
-        )}
-        {showScheduleForm && (
-          <form onSubmit={async e => { e.preventDefault(); await apiFetch(`/assets/${id}/schedules`, { method: 'POST', body: JSON.stringify({ ...scheduleForm, interval_days: scheduleForm.interval_days ? Number(scheduleForm.interval_days) : null, interval_distance: scheduleForm.interval_distance ? Number(scheduleForm.interval_distance) : null, interval_hours: scheduleForm.interval_hours ? Number(scheduleForm.interval_hours) : null }) }); setScheduleForm({ title: '', interval_days: '', interval_distance: '', interval_hours: '' }); setShowScheduleForm(false); refresh() }}>
-            <input required value={scheduleForm.title} onChange={e => setScheduleForm({ ...scheduleForm, title: e.target.value })} placeholder="title" />
-            <input value={scheduleForm.interval_days} onChange={e => setScheduleForm({ ...scheduleForm, interval_days: e.target.value })} placeholder="interval days" />
-            <input value={scheduleForm.interval_distance} onChange={e => setScheduleForm({ ...scheduleForm, interval_distance: e.target.value })} placeholder="interval distance" />
-            <input value={scheduleForm.interval_hours} onChange={e => setScheduleForm({ ...scheduleForm, interval_hours: e.target.value })} placeholder="interval hours" />
-            <button type="submit">Add schedule</button>
-          </form>
-        )}
       </section>
       <section className="card">
         <h3>Maintenance history</h3>
         {events.map(ev => <p key={ev.id}>{new Date(ev.performed_at).toLocaleString()} - {ev.event_type} {ev.notes || ''}</p>)}
         <div className="actions">
-          <button type="button" onClick={() => setShowEventForm((current) => !current)}>
-            {showEventForm ? 'Close activity form' : 'Register maintenance activity'}
-          </button>
+          <Link to={`/assets/${id}/maintenance-events/new`}>Register maintenance activity</Link>
         </div>
-        {showEventForm && (
-          <form onSubmit={async e => { e.preventDefault(); await apiFetch(`/assets/${id}/maintenance-events`, { method: 'POST', body: JSON.stringify({ ...eventForm, completion_meter_value: eventForm.completion_meter_value ? Number(eventForm.completion_meter_value) : null }) }); setEventForm({ event_type: 'maintenance', notes: '', completion_meter_value: '' }); setShowEventForm(false); refresh() }}>
-            <input value={eventForm.event_type} onChange={e => setEventForm({ ...eventForm, event_type: e.target.value })} placeholder="event type" />
-            <input value={eventForm.completion_meter_value} onChange={e => setEventForm({ ...eventForm, completion_meter_value: e.target.value })} placeholder="meter at completion" />
-            <input value={eventForm.notes} onChange={e => setEventForm({ ...eventForm, notes: e.target.value })} placeholder="notes" />
-            <button type="submit">Record event</button>
-          </form>
-        )}
       </section>
     </div>
+  )
+}
+
+export function ScheduleIntervalUpdatePage() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const [asset, setAsset] = useState(null)
+  const [schedules, setSchedules] = useState([])
+  const [form, setForm] = useState({ schedule_id: '', interval_days: '', interval_distance: '', interval_hours: '' })
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    Promise.all([apiFetch(`/assets/${id}`), apiFetch(`/assets/${id}/schedules`)])
+      .then(([assetResult, scheduleResult]) => {
+        setAsset(assetResult)
+        setSchedules(scheduleResult)
+        if (scheduleResult.length > 0) {
+          const firstSchedule = scheduleResult[0]
+          setForm({
+            schedule_id: String(firstSchedule.id),
+            interval_days: firstSchedule.interval_days ?? '',
+            interval_distance: firstSchedule.interval_distance ?? '',
+            interval_hours: firstSchedule.interval_hours ?? '',
+          })
+        }
+      })
+      .catch((err) => setError(err.message || 'Unable to load schedule details'))
+  }, [id])
+
+  function onScheduleChange(scheduleId) {
+    const selectedSchedule = schedules.find((schedule) => String(schedule.id) === scheduleId)
+    if (!selectedSchedule) return
+    setForm({
+      schedule_id: scheduleId,
+      interval_days: selectedSchedule.interval_days ?? '',
+      interval_distance: selectedSchedule.interval_distance ?? '',
+      interval_hours: selectedSchedule.interval_hours ?? '',
+    })
+  }
+
+  async function submit(e) {
+    e.preventDefault()
+    setError('')
+    await apiFetch(`/schedules/${form.schedule_id}/intervals`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        interval_days: form.interval_days ? Number(form.interval_days) : null,
+        interval_distance: form.interval_distance ? Number(form.interval_distance) : null,
+        interval_hours: form.interval_hours ? Number(form.interval_hours) : null,
+      }),
+    })
+    navigate(`/assets/${id}`)
+  }
+
+  return (
+    <form onSubmit={submit} className="card narrow-card">
+      <h2>Update usage interval</h2>
+      {asset && <p className="hint">Adjust schedule intervals for <strong>{asset.name}</strong>.</p>}
+      {error && <p className="error">{error}</p>}
+      {schedules.length === 0 ? (
+        <>
+          <p>No schedules exist for this asset yet.</p>
+          <div className="actions">
+            <Link to={`/assets/${id}/schedules/new`}>Create a schedule first</Link>
+            <Link to={`/assets/${id}`}>Back to asset</Link>
+          </div>
+        </>
+      ) : (
+        <>
+          <label htmlFor="interval-schedule">Scheduled Maintenance</label>
+          <select id="interval-schedule" value={form.schedule_id} onChange={(e) => onScheduleChange(e.target.value)}>
+            {schedules.map((schedule) => <option key={schedule.id} value={schedule.id}>{schedule.title}</option>)}
+          </select>
+
+          <label htmlFor="interval-days">Interval (days)</label>
+          <input id="interval-days" inputMode="numeric" value={form.interval_days} onChange={(e) => setForm({ ...form, interval_days: e.target.value })} />
+
+          <label htmlFor="interval-distance">Interval (distance)</label>
+          <input id="interval-distance" inputMode="decimal" value={form.interval_distance} onChange={(e) => setForm({ ...form, interval_distance: e.target.value })} />
+
+          <label htmlFor="interval-hours">Interval (hours)</label>
+          <input id="interval-hours" inputMode="decimal" value={form.interval_hours} onChange={(e) => setForm({ ...form, interval_hours: e.target.value })} />
+
+          <div className="actions">
+            <button type="submit">Save interval updates</button>
+            <Link to={`/assets/${id}`}>Cancel</Link>
+          </div>
+        </>
+      )}
+    </form>
+  )
+}
+
+export function MaintenanceEventFormPage() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const [asset, setAsset] = useState(null)
+  const [form, setForm] = useState({ event_type: 'maintenance', completion_meter_value: '', notes: '' })
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    apiFetch(`/assets/${id}`)
+      .then(setAsset)
+      .catch((err) => setError(err.message || 'Unable to load asset details'))
+  }, [id])
+
+  async function submit(e) {
+    e.preventDefault()
+    setError('')
+    await apiFetch(`/assets/${id}/maintenance-events`, {
+      method: 'POST',
+      body: JSON.stringify({
+        ...form,
+        completion_meter_value: form.completion_meter_value ? Number(form.completion_meter_value) : null,
+      }),
+    })
+    navigate(`/assets/${id}`)
+  }
+
+  return (
+    <form onSubmit={submit} className="card narrow-card">
+      <h2>Register maintenance activity</h2>
+      {asset && <p className="hint">Capture completed work for <strong>{asset.name}</strong>.</p>}
+      {error && <p className="error">{error}</p>}
+
+      <label htmlFor="event-type">Activity Type</label>
+      <input id="event-type" required value={form.event_type} onChange={(e) => setForm({ ...form, event_type: e.target.value })} />
+
+      <label htmlFor="completion-meter">Meter at Completion</label>
+      <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
+
+      <label htmlFor="event-notes">Notes</label>
+      <textarea id="event-notes" rows={5} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+
+      <div className="actions">
+        <button type="submit">Record activity</button>
+        <Link to={`/assets/${id}`}>Cancel</Link>
+      </div>
+    </form>
+  )
+}
+
+export function ScheduleFormPage() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const [asset, setAsset] = useState(null)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({ title: '', description: '', interval_days: '', interval_distance: '', interval_hours: '' })
+
+  useEffect(() => {
+    apiFetch(`/assets/${id}`)
+      .then(setAsset)
+      .catch((err) => setError(err.message || 'Unable to load asset details'))
+  }, [id])
+
+  async function submit(e) {
+    e.preventDefault()
+    setError('')
+    await apiFetch(`/assets/${id}/schedules`, {
+      method: 'POST',
+      body: JSON.stringify({
+        ...form,
+        interval_days: form.interval_days ? Number(form.interval_days) : null,
+        interval_distance: form.interval_distance ? Number(form.interval_distance) : null,
+        interval_hours: form.interval_hours ? Number(form.interval_hours) : null,
+      }),
+    })
+    navigate(`/assets/${id}`)
+  }
+
+  return (
+    <form onSubmit={submit} className="card narrow-card">
+      <h2>Add scheduled maintenance activity</h2>
+      {asset && <p className="hint">Create a recurring maintenance schedule for <strong>{asset.name}</strong>.</p>}
+      {error && <p className="error">{error}</p>}
+
+      <label htmlFor="schedule-title">Schedule Title</label>
+      <input id="schedule-title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+
+      <label htmlFor="schedule-description">Description</label>
+      <textarea id="schedule-description" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+
+      <label htmlFor="schedule-interval-days">Interval (days)</label>
+      <input id="schedule-interval-days" inputMode="numeric" value={form.interval_days} onChange={(e) => setForm({ ...form, interval_days: e.target.value })} />
+
+      <label htmlFor="schedule-interval-distance">Interval (distance)</label>
+      <input id="schedule-interval-distance" inputMode="decimal" value={form.interval_distance} onChange={(e) => setForm({ ...form, interval_distance: e.target.value })} />
+
+      <label htmlFor="schedule-interval-hours">Interval (hours)</label>
+      <input id="schedule-interval-hours" inputMode="decimal" value={form.interval_hours} onChange={(e) => setForm({ ...form, interval_hours: e.target.value })} />
+
+      <div className="actions">
+        <button type="submit">Save schedule</button>
+        <Link to={`/assets/${id}`}>Cancel</Link>
+      </div>
+    </form>
   )
 }

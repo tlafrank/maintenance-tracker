@@ -25,6 +25,7 @@ from app.schemas.schemas import (
     MeterReadingCreate,
     MeterReadingOut,
     ScheduleCreate,
+    ScheduleIntervalUpdate,
     ScheduleOut,
     ScheduleUpdate,
     Token,
@@ -227,6 +228,21 @@ def update_schedule(schedule_id: int, payload: ScheduleUpdate, current_user: Use
     _owned_asset(schedule.asset_id, current_user.id, db)
     for key, value in payload.model_dump().items():
         setattr(schedule, key, value)
+    db.commit()
+    db.refresh(schedule)
+    return schedule
+
+
+@router.patch('/schedules/{schedule_id}/intervals', response_model=ScheduleOut)
+def update_schedule_intervals(schedule_id: int, payload: ScheduleIntervalUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    schedule = db.get(MaintenanceSchedule, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail='Schedule not found')
+    _owned_asset(schedule.asset_id, current_user.id, db)
+
+    schedule.interval_days = payload.interval_days
+    schedule.interval_distance = payload.interval_distance
+    schedule.interval_hours = payload.interval_hours
     db.commit()
     db.refresh(schedule)
     return schedule

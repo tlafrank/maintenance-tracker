@@ -115,6 +115,12 @@ class ScheduleUpdate(ScheduleCreate):
     pass
 
 
+class ScheduleIntervalUpdate(BaseModel):
+    interval_days: int | None = None
+    interval_distance: float | None = None
+    interval_hours: float | None = None
+
+
 class ScheduleOut(ScheduleCreate):
     id: int
     asset_id: int

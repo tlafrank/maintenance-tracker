@@ -1,7 +1,14 @@
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { apiFetch } from './api/client'
-import { AssetDetailPage, AssetFormPage, AssetListPage } from './pages/Assets'
+import {
+  AssetDetailPage,
+  AssetFormPage,
+  AssetListPage,
+  MaintenanceEventFormPage,
+  ScheduleFormPage,
+  ScheduleIntervalUpdatePage,
+} from './pages/Assets'
 import { DashboardPage } from './pages/Dashboard'
 import { LoginPage, RegisterPage } from './pages/Auth'
 
@@ -43,6 +50,9 @@ export default function App() {
         <Route path="/assets" element={<ProtectedRoute><AssetListPage /></ProtectedRoute>} />
         <Route path="/assets/new" element={<ProtectedRoute><AssetFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id" element={<ProtectedRoute><AssetDetailPage /></ProtectedRoute>} />
+        <Route path="/assets/:id/intervals/update" element={<ProtectedRoute><ScheduleIntervalUpdatePage /></ProtectedRoute>} />
+        <Route path="/assets/:id/maintenance-events/new" element={<ProtectedRoute><MaintenanceEventFormPage /></ProtectedRoute>} />
+        <Route path="/assets/:id/schedules/new" element={<ProtectedRoute><ScheduleFormPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </div>
