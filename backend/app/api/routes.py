@@ -50,7 +50,12 @@ def register(payload: UserCreate, request: Request, db: Session = Depends(get_db
             request.client.host if request.client else 'unknown',
         )
         raise HTTPException(status_code=400, detail='Email already registered')
-    user = User(email=payload.email, display_name=payload.display_name, password_hash=hash_password(payload.password))
+    user = User(
+        email=payload.email,
+        display_name=payload.display_name,
+        password_hash=hash_password(payload.password),
+        preferred_distance_unit='km',
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
