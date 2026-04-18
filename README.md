@@ -112,6 +112,78 @@ cp .env.example .env
 
 ---
 
+## Monitoring authentication logs
+
+Login and registration events are logged by the backend service (`app.auth` logger).
+
+Follow auth-related log lines live:
+
+```bash
+docker compose logs -f backend | grep "app.auth"
+```
+
+Show only failed login attempts:
+
+```bash
+docker compose logs backend --since=1h | grep "login_failed"
+```
+
+Show successful logins:
+
+```bash
+docker compose logs backend --since=1h | grep "login_success"
+```
+
+Each log line includes email, source IP, and user-agent for login attempts.
+
+---
+
+## Remote client troubleshooting
+
+If users access the app from another machine on your LAN and you see Vite websocket errors such as:
+
+- `failed to connect to websocket`
+- `localhost:5173` websocket failures from the browser
+
+rebuild/restart the frontend container. The frontend image now serves a production build (`npm run preview`) instead of dev HMR mode, which avoids remote websocket/HMR issues.
+
+```bash
+docker compose up -d --build frontend nginx
+```
+
+If registration still fails, inspect backend auth logs:
+
+```bash
+docker compose logs -f backend | grep -E "app.auth|register|login"
+```
+
+### Assets
+- `GET /api/assets`
+- `POST /api/assets`
+- `GET /api/assets/{id}`
+- `PUT /api/assets/{id}`
+- `DELETE /api/assets/{id}` (archive)
+
+## Backend restart loop troubleshooting
+
+If the backend restarts with Alembic error `ModuleNotFoundError: No module named 'app'`, recreate the backend image so the updated Alembic path bootstrap is included:
+
+```bash
+docker compose up -d --build backend
+```
+
+Then confirm startup:
+
+```bash
+docker compose logs -f backend
+```
+
+You should see Alembic complete and then Uvicorn start instead of repeated container exits.
+
+### Maintenance events
+- `GET /api/assets/{id}/maintenance-events`
+- `POST /api/assets/{id}/maintenance-events`
+
 ## API surface (MVP)
 
 ### Auth
@@ -146,7 +218,7 @@ cp .env.example .env
 - `GET /api/dashboard`
 - `GET /api/alerts`
 
----
+### Out of scope for MVP
 
 ## Scope
 

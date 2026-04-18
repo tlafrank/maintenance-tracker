@@ -41,11 +41,18 @@ export function LoginPage({ onLogin }) {
 export function RegisterPage() {
   const [form, setForm] = useState({ email: '', display_name: '', password: '' })
   const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
 
   async function submit(e) {
     e.preventDefault()
-    await apiFetch('/auth/register', { method: 'POST', body: JSON.stringify(form) })
-    setMessage('Registered. You can now log in.')
+    setError('')
+    setMessage('')
+    try {
+      await apiFetch('/auth/register', { method: 'POST', body: JSON.stringify(form) })
+      setMessage('Registered. You can now log in.')
+    } catch (err) {
+      setError(err.message || 'Unable to create account')
+    }
   }
 
   return (
@@ -54,6 +61,7 @@ export function RegisterPage() {
       <input required type="email" placeholder="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
       <input required placeholder="Display name" value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })} />
       <input required type="password" placeholder="Password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+      {error && <p className="error">{error}</p>}
       {message && <p>{message}</p>}
       <button type="submit">Create account</button>
     </form>

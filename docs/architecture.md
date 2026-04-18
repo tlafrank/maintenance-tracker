@@ -3,7 +3,7 @@
 ## Components
 
 - **frontend**: React + Vite app for login, dashboard, asset and maintenance workflows.
-- **backend**: FastAPI REST API with JWT authentication and due logic services.
+- **backend**: FastAPI REST API with JWT authentication, auth event logging (`app.auth`), and due logic services.
 - **db**: PostgreSQL persistent data store.
 - **nginx**: Reverse proxy routing `/api` to backend and remaining paths to frontend.
 

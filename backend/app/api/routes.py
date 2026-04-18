@@ -1,6 +1,7 @@
+import logging
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
@@ -31,25 +32,50 @@ from app.schemas.schemas import (
 from app.services.due_logic import evaluate_schedule_status, latest_meter_map
 
 router = APIRouter()
+auth_logger = logging.getLogger('app.auth')
 
 
 @router.post('/auth/register', response_model=UserOut)
-def register(payload: UserCreate, db: Session = Depends(get_db)):
+def register(payload: UserCreate, request: Request, db: Session = Depends(get_db)):
     existing = db.scalar(select(User).where(User.email == payload.email))
     if existing:
+        auth_logger.warning(
+            'register_failed_existing_email email=%s ip=%s',
+            payload.email,
+            request.client.host if request.client else 'unknown',
+        )
         raise HTTPException(status_code=400, detail='Email already registered')
     user = User(email=payload.email, display_name=payload.display_name, password_hash=hash_password(payload.password))
     db.add(user)
     db.commit()
     db.refresh(user)
+    auth_logger.info(
+        'register_success user_id=%s email=%s ip=%s',
+        user.id,
+        user.email,
+        request.client.host if request.client else 'unknown',
+    )
     return user
 
 
 @router.post('/auth/login', response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == form_data.username))
     if not user or not verify_password(form_data.password, user.password_hash):
+        auth_logger.warning(
+            'login_failed email=%s ip=%s user_agent=%s',
+            form_data.username,
+            request.client.host if request.client else 'unknown',
+            request.headers.get('user-agent', 'unknown'),
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid credentials')
+    auth_logger.info(
+        'login_success user_id=%s email=%s ip=%s user_agent=%s',
+        user.id,
+        user.email,
+        request.client.host if request.client else 'unknown',
+        request.headers.get('user-agent', 'unknown'),
+    )
     return Token(access_token=create_access_token(str(user.id)))
 
 

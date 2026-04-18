@@ -7,7 +7,13 @@ export async function apiFetch(path, options = {}) {
 
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers })
   if (!response.ok) {
-    const text = await response.text()
+    let text = ''
+    try {
+      const payload = await response.json()
+      text = payload.detail || JSON.stringify(payload)
+    } catch {
+      text = await response.text()
+    }
     throw new Error(text || 'Request failed')
   }
   if (response.status === 204) return null
