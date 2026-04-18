@@ -228,6 +228,7 @@ export function AssetDetailPage() {
   useEffect(() => { refresh() }, [id])
   const latestReading = readings[0]
   const compatibleMeters = useMemo(() => meters.filter((meter) => meter.meter_type === asset?.interval_basis), [meters, asset])
+  const primaryCompatibleMeter = compatibleMeters[compatibleMeters.length - 1]
 
   if (!asset) return <p>Loading...</p>
   return (
@@ -260,10 +261,14 @@ export function AssetDetailPage() {
         ) : (
           <p>No meter readings recorded yet.</p>
         )}
-        <p><strong>Configured compatible meters:</strong> {compatibleMeters.length}</p>
-        {compatibleMeters.map((meter) => (
-          <p key={meter.id}>{meter.meter_type} meter ({meter.unit}) current value: {meter.current_value ?? '-'}</p>
-        ))}
+        {primaryCompatibleMeter ? (
+          <p><strong>Configured meter:</strong> {primaryCompatibleMeter.meter_type} ({primaryCompatibleMeter.unit}) current value: {primaryCompatibleMeter.current_value ?? '-'}</p>
+        ) : (
+          <p>No compatible meter configured yet.</p>
+        )}
+        {compatibleMeters.length > 1 && (
+          <p className="hint">Multiple legacy meters were found. New updates will use the most recent one.</p>
+        )}
       </section>
       <section className="card">
         <h3>Schedules</h3>
@@ -296,14 +301,15 @@ export function MeterReadingFormPage() {
   }, [id])
 
   const compatibleMeters = useMemo(() => meters.filter((meter) => meter.meter_type === asset?.interval_basis), [meters, asset])
+  const primaryCompatibleMeter = compatibleMeters[compatibleMeters.length - 1]
 
   useEffect(() => {
-    if (compatibleMeters.length === 0) {
+    if (!primaryCompatibleMeter) {
       setReadingForm((current) => ({ ...current, meter_id: '' }))
       return
     }
-    setReadingForm((current) => ({ ...current, meter_id: current.meter_id || String(compatibleMeters[0].id) }))
-  }, [compatibleMeters])
+    setReadingForm((current) => ({ ...current, meter_id: String(primaryCompatibleMeter.id) }))
+  }, [primaryCompatibleMeter])
 
   async function createMeter(e) {
     e.preventDefault()
@@ -341,14 +347,12 @@ export function MeterReadingFormPage() {
         {error && <p className="error">{error}</p>}
         {asset && <p className="hint">Readings here must match the asset tracking basis: <strong>{METER_TYPE_LABELS[asset.interval_basis] || asset.interval_basis}</strong>.</p>}
 
-        {compatibleMeters.length === 0 ? (
+        {!primaryCompatibleMeter ? (
           <p>No compatible meter exists yet. Create one below first.</p>
         ) : (
           <>
             <label htmlFor="reading-meter">Meter</label>
-            <select id="reading-meter" value={readingForm.meter_id} onChange={(e) => setReadingForm({ ...readingForm, meter_id: e.target.value })}>
-              {compatibleMeters.map((meter) => <option key={meter.id} value={meter.id}>{meter.meter_type} ({meter.unit})</option>)}
-            </select>
+            <input id="reading-meter" value={`${primaryCompatibleMeter.meter_type} (${primaryCompatibleMeter.unit})`} disabled />
 
             <label htmlFor="reading-value">Reading Value</label>
             <input id="reading-value" required inputMode="decimal" value={readingForm.reading_value} onChange={(e) => setReadingForm({ ...readingForm, reading_value: e.target.value })} />
@@ -364,7 +368,7 @@ export function MeterReadingFormPage() {
         )}
       </form>
 
-      {compatibleMeters.length === 0 && asset && (
+      {!primaryCompatibleMeter && asset && (
         <form onSubmit={createMeter} className="card narrow-card">
           <h2>Create compatible meter</h2>
           <label htmlFor="meter-type">Meter Type</label>

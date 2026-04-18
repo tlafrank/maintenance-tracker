@@ -166,6 +166,18 @@ def archive_asset(asset_id: int, current_user: User = Depends(get_current_user),
 @router.post('/assets/{asset_id}/meters', response_model=MeterOut)
 def create_meter(asset_id: int, payload: MeterCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _owned_asset(asset_id, current_user.id, db)
+    existing_meter = db.scalar(
+        select(Meter)
+        .where(Meter.asset_id == asset_id, Meter.meter_type == payload.meter_type)
+        .order_by(desc(Meter.id))
+    )
+    if existing_meter:
+        existing_meter.unit = payload.unit
+        existing_meter.current_value = payload.current_value
+        db.commit()
+        db.refresh(existing_meter)
+        return existing_meter
+
     meter = Meter(asset_id=asset_id, **payload.model_dump())
     db.add(meter)
     db.commit()
