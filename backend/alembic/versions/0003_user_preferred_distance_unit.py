@@ -1,6 +1,6 @@
 """add preferred distance unit to users
 
-Revision ID: 0003_user_preferred_distance_unit
+Revision ID: 0003_user_pref_dist_unit
 Revises: 0002_asset_types_interval
 Create Date: 2026-04-18
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '0003_user_preferred_distance_unit'
+revision: str = '0003_user_pref_dist_unit'
 down_revision: Union[str, None] = '0002_asset_types_interval'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
