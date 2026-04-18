@@ -66,9 +66,9 @@ function formatReadingDate(isoDateString) {
   if (!isoDateString) return ''
   const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
   const normalizedDate = hasTimezone ? isoDateString : `${isoDateString}Z`
-  return new Date(normalizedDate).toLocaleDateString(undefined, {
+  return new Date(normalizedDate).toLocaleDateString('en-GB', {
     day: '2-digit',
-    month: 'short',
+    month: 'long',
     year: 'numeric',
   })
 }
@@ -77,13 +77,40 @@ function formatReadingDateTime(isoDateString) {
   if (!isoDateString) return ''
   const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
   const normalizedDate = hasTimezone ? isoDateString : `${isoDateString}Z`
-  return new Date(normalizedDate).toLocaleString(undefined, {
+  return new Date(normalizedDate).toLocaleString('en-GB', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function intervalPeriodLabel(intervalDays) {
+  const mapping = {
+    7: 'Weekly',
+    14: 'Fortnightly',
+    30: 'Monthly',
+    91: 'Quarterly',
+    182: 'Twice-yearly',
+    365: 'Annually',
+    730: 'Two-yearly',
+    1825: 'Five-yearly',
+  }
+  return mapping[intervalDays] || (intervalDays ? `Every ${intervalDays} days` : '')
+}
+
+function humanDueText(daysLeft) {
+  if (daysLeft === null || daysLeft === undefined) return 'No due date'
+  if (daysLeft === -14) return 'Two weeks past due'
+  if (daysLeft < -14) return `${Math.abs(daysLeft)} days past due`
+  if (daysLeft < -6) return 'Overdue by one week'
+  if (daysLeft < 0) return `${Math.abs(daysLeft)} days past due`
+  if (daysLeft === 0) return 'Due today'
+  if (daysLeft <= 7) return 'Due next week'
+  if (daysLeft <= 30) return `Due in ${Math.ceil(daysLeft / 7)} weeks`
+  if (daysLeft <= 365) return `Due in ${Math.ceil(daysLeft / 30)} months`
+  return `Due in ${Math.ceil(daysLeft / 365)} years`
 }
 
 function Breadcrumbs({ items }) {
@@ -297,22 +324,23 @@ export function AssetDetailPage() {
         )}
       </section>
       <section className="card">
-        <h3>Schedules</h3>
+        <h3>Scheduled Maintenance Tasks</h3>
         {schedules.map((schedule) => {
           const lastMatchingEvent = events.find((event) => event.event_type.split(',').map((task) => task.trim().toLowerCase()).includes(schedule.title.trim().toLowerCase()))
           const referenceDate = lastMatchingEvent ? new Date(lastMatchingEvent.performed_at) : new Date()
           const dueDate = schedule.interval_days ? new Date(referenceDate.getTime() + (schedule.interval_days * 24 * 60 * 60 * 1000)) : null
           const daysLeft = dueDate ? Math.ceil((dueDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null
           const status = daysLeft === null ? 'future' : (daysLeft < 0 ? 'overdue' : (daysLeft <= 14 ? 'upcoming' : 'future'))
+          const usageUnit = asset.interval_basis === 'distance' ? 'km' : asset.interval_basis
+          const intervalParts = [intervalPeriodLabel(schedule.interval_days)]
+          if (schedule.interval_distance) intervalParts.push(`Every ${schedule.interval_distance} ${usageUnit}`)
+          if (schedule.interval_hours) intervalParts.push(`Every ${schedule.interval_hours} hours`)
+          const intervalSummary = intervalParts.filter(Boolean).join(' | ')
           return (
             <div key={schedule.id} className="schedule-card">
               <Link to={`/assets/${id}/schedules/${schedule.id}/edit`}><strong>{schedule.title}</strong></Link>
-              <p className="muted-text">
-                {schedule.interval_days ? `Every ${schedule.interval_days} day(s)` : ''}
-                {schedule.interval_distance ? ` · ${schedule.interval_distance} usage` : ''}
-                {schedule.interval_hours ? ` · ${schedule.interval_hours} hours` : ''}
-              </p>
-              {daysLeft !== null && <p className="muted-text">{daysLeft} day(s) left until due</p>}
+              <p className="muted-text">{intervalSummary}</p>
+              {daysLeft !== null && <p className="muted-text">{humanDueText(daysLeft)}</p>}
               <span className={`badge status-${status}`}>{status}</span>
             </div>
           )
@@ -322,7 +350,7 @@ export function AssetDetailPage() {
         <h3>Maintenance history</h3>
         {events.map((ev) => (
           <div key={ev.id} className="meter-highlight">
-            <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDateTime(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `· Meter ${ev.completion_meter_value}` : ''}</p>
+            <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDate(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `@ ${ev.completion_meter_value} km` : ''}</p>
             <div className="badges">
               {ev.event_type.split(',').map((task) => {
                 const trimmedTask = task.trim()
