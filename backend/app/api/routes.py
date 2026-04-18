@@ -20,6 +20,7 @@ from app.schemas.schemas import (
     DashboardOut,
     MaintenanceEventCreate,
     MaintenanceEventOut,
+    MaintenanceActivitySuggestion,
     MeterCreate,
     MeterOut,
     MeterReadingCreate,
@@ -285,6 +286,32 @@ def create_event(asset_id: int, payload: MaintenanceEventCreate, current_user: U
     db.commit()
     db.refresh(event)
     return event
+
+
+@router.get('/maintenance-activities', response_model=list[MaintenanceActivitySuggestion])
+def list_maintenance_activities(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    events = db.scalars(
+        select(MaintenanceEvent)
+        .where(MaintenanceEvent.performed_by_user_id == current_user.id)
+        .order_by(desc(MaintenanceEvent.performed_at))
+    ).all()
+
+    suggestions: list[MaintenanceActivitySuggestion] = []
+    seen: set[str] = set()
+    for event in events:
+        key = event.event_type.strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        suggestions.append(
+            MaintenanceActivitySuggestion(
+                activity_name=event.event_type,
+                last_performed_at=event.performed_at,
+                last_notes=event.notes,
+                last_completion_meter_value=event.completion_meter_value,
+            )
+        )
+    return suggestions
 
 
 @router.get('/dashboard', response_model=DashboardOut)

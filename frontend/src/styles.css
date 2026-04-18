@@ -15,7 +15,12 @@ fieldset { border: 1px solid #d9dfea; border-radius: .35rem; margin: .25rem 0 .9
 .hint { margin: .2rem 0 .5rem; color: #556; font-size: .85rem; }
 .error { color: #b00; }
 .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .75rem 0; }
+.action-button { min-width: 220px; text-align: center; flex: 1 1 220px; }
 .narrow-card { max-width: 640px; margin: 1rem auto; }
 .card h2, .card h3 { margin-top: 0; color: #223; }
+.card h4 { margin-bottom: .5rem; }
+.meter-highlight { background: #f4f8ff; border: 1px solid #d9e6ff; border-radius: .35rem; padding: .75rem; margin-bottom: .9rem; }
+.breadcrumbs { margin-bottom: .75rem; color: #556; font-size: .9rem; display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; }
+.breadcrumb-separator { margin: 0 .25rem; color: #99a; }
 
 form.card { background: #dfe3e8; }

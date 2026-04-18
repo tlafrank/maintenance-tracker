@@ -151,6 +151,13 @@ class MaintenanceEventOut(BaseModel):
         from_attributes = True
 
 
+class MaintenanceActivitySuggestion(BaseModel):
+    activity_name: str
+    last_performed_at: datetime
+    last_notes: str | None = None
+    last_completion_meter_value: float | None = None
+
+
 class DashboardItem(BaseModel):
     asset_id: int
     schedule_id: int
