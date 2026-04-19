@@ -416,6 +416,7 @@ export function AssetDetailPage() {
   const [readings, setReadings] = useState([])
   const [schedules, setSchedules] = useState([])
   const [events, setEvents] = useState([])
+  const [historySearch, setHistorySearch] = useState('')
 
   async function refresh() {
     const [a, m, r, s, e] = await Promise.all([
@@ -433,6 +434,15 @@ export function AssetDetailPage() {
   const compatibleMeters = useMemo(() => meters.filter((meter) => meter.service_trigger === asset?.service_trigger), [meters, asset])
   const latestReadingMeter = meters.find((meter) => meter.id === latestReading?.meter_id)
   const usageTypeLabel = usageLabel(asset?.service_trigger)
+  const filteredEvents = useMemo(() => {
+    const normalizedSearch = historySearch.trim().toLowerCase()
+    if (!normalizedSearch) return events
+    const searchTerms = normalizedSearch.split(/\s+/).filter(Boolean)
+    return events.filter((event) => {
+      const searchableContent = `${event.event_type || ''} ${event.notes || ''}`.toLowerCase()
+      return searchTerms.every((term) => searchableContent.includes(term))
+    })
+  }, [events, historySearch])
 
   if (!asset) return <p>Loading...</p>
   return (
@@ -513,7 +523,14 @@ export function AssetDetailPage() {
       </section>
       <section className="card">
         <h3>Maintenance history</h3>
-        {events.map((ev) => (
+        <input
+          aria-label="Search maintenance history"
+          placeholder="Search tasks or notes"
+          value={historySearch}
+          onChange={(e) => setHistorySearch(e.target.value)}
+        />
+        {filteredEvents.length === 0 && <p className="muted-text">No maintenance activities match your search.</p>}
+        {filteredEvents.map((ev) => (
           <div key={ev.id} className="meter-highlight">
             <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDate(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `@ ${formatIntervalValue(ev.completion_meter_value)} ${usageUnit(asset.service_trigger)}` : ''}</p>
             <div className="badges">
@@ -522,6 +539,7 @@ export function AssetDetailPage() {
                 return trimmedTask ? <span key={`${ev.id}-${trimmedTask}`} className="badge">{trimmedTask}</span> : null
               })}
             </div>
+            {ev.notes && <p className="muted-text">{ev.notes}</p>}
           </div>
         ))}
       </section>
