@@ -9,11 +9,15 @@ function formatValue(value) {
 
 export function DashboardPage() {
   const [data, setData] = useState({ due_soon: [], overdue: [], recent_events: [] })
-  const dueSoonWeeks = 2
+  const [upcomingWindowDays, setUpcomingWindowDays] = useState(14)
 
   useEffect(() => {
-    apiFetch('/dashboard').then(setData)
+    Promise.all([apiFetch('/dashboard'), apiFetch('/auth/me')]).then(([dashboardData, me]) => {
+      setData(dashboardData)
+      setUpcomingWindowDays(me.upcoming_task_window_days || 14)
+    })
   }, [])
+  const dueSoonWeeks = Math.max(1, Math.ceil(upcomingWindowDays / 7))
 
   return (
     <div className="grid">

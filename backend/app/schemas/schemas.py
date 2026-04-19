@@ -19,6 +19,7 @@ class UserOut(BaseModel):
     email: EmailStr
     display_name: str
     preferred_distance_unit: str = 'km'
+    upcoming_task_window_days: int = 14
     is_active: bool
 
     class Config:
@@ -203,5 +204,6 @@ class DashboardOut(BaseModel):
 class UserProfileUpdate(BaseModel):
     display_name: str
     preferred_distance_unit: str = 'km'
+    upcoming_task_window_days: int = 14
     current_password: str | None = None
     new_password: str | None = None

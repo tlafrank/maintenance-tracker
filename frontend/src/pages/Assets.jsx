@@ -144,12 +144,18 @@ export function AssetListPage() {
         <h2>Assets</h2>
         <div className="equal-actions">
           <Link className="btn btn-outline-primary equal-action-btn" to="/assets/new">Add Asset</Link>
-          <Link className="btn btn-outline-primary equal-action-btn" to="/dashboard">Back to Dashboard</Link>
         </div>
       </section>
       <section className="card span-all">
         {assets.length === 0 && <p className="muted-text">No assets yet. Use Add Asset to get started.</p>}
-        {assets.map(a => <p key={a.id}><Link to={`/assets/${a.id}`}>{a.name}</Link> ({a.asset_type})</p>)}
+        <div className="asset-list">
+          {assets.map((assetItem) => (
+            <Link key={assetItem.id} to={`/assets/${assetItem.id}`} className="asset-list-item">
+              <strong>{assetItem.name}</strong>
+              <span className="muted-text">{assetItem.asset_type}</span>
+            </Link>
+          ))}
+        </div>
       </section>
     </div>
   )
@@ -675,9 +681,6 @@ export function MaintenanceEventFormPage() {
             }
           }}
         />
-        <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => addTask(taskInput)}>
-          Add Task
-        </button>
       </div>
       <datalist id="task-options">
         {taskSuggestions.map((task) => <option key={task} value={task} />)}

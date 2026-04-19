@@ -59,6 +59,7 @@ def register(payload: UserCreate, request: Request, db: Session = Depends(get_db
         display_name=payload.display_name,
         password_hash=hash_password(payload.password),
         preferred_distance_unit='km',
+        upcoming_task_window_days=14,
     )
     db.add(user)
     db.commit()
@@ -102,6 +103,7 @@ def me(current_user: User = Depends(get_current_user)):
 def update_profile(payload: UserProfileUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     current_user.display_name = payload.display_name.strip() or current_user.display_name
     current_user.preferred_distance_unit = payload.preferred_distance_unit.strip() or 'km'
+    current_user.upcoming_task_window_days = max(1, int(payload.upcoming_task_window_days or 14))
 
     if payload.new_password:
         if not payload.current_password or not verify_password(payload.current_password, current_user.password_hash):
@@ -376,8 +378,23 @@ def update_event(event_id: int, payload: MaintenanceEventCreate, current_user: U
 
     if payload.completion_meter_value is not None:
         meter = db.scalar(select(Meter).where(Meter.asset_id == asset.id).order_by(desc(Meter.id)))
-        if meter:
+        if not meter:
+            meter = Meter(
+                asset_id=asset.id,
+                meter_type=asset.interval_basis,
+                unit=current_user.preferred_distance_unit if asset.interval_basis == 'distance' else asset.interval_basis,
+                current_value=payload.completion_meter_value,
+            )
+            db.add(meter)
+            db.flush()
+        else:
             meter.current_value = payload.completion_meter_value
+        db.add(MeterReading(
+            meter_id=meter.id,
+            asset_id=asset.id,
+            reading_value=payload.completion_meter_value,
+            notes='Auto-captured from maintenance history update',
+        ))
     db.commit()
     db.refresh(event)
     return event
@@ -520,12 +537,31 @@ def dashboard(current_user: User = Depends(get_current_user), db: Session = Depe
         for schedule in asset.schedules:
             if not schedule.active:
                 continue
-            last_event = db.scalar(
+            asset_events = db.scalars(
                 select(MaintenanceEvent)
-                .where(MaintenanceEvent.schedule_id == schedule.id)
+                .where(MaintenanceEvent.asset_id == asset.id)
                 .order_by(desc(MaintenanceEvent.performed_at))
+            ).all()
+            last_event = next((
+                event for event in asset_events
+                if schedule.title.strip().lower() in [task.strip().lower() for task in event.event_type.split(',')]
+            ), None)
+            status_value = evaluate_schedule_status(
+                schedule,
+                asset,
+                meter_map,
+                last_event,
+                datetime.utcnow(),
+                due_soon_window_days=current_user.upcoming_task_window_days,
             )
-            status_value = evaluate_schedule_status(schedule, asset, meter_map, last_event, datetime.utcnow())
+            if status_value == 'due_soon' and schedule.interval_days and last_event:
+                due_date = last_event.performed_at + timedelta(days=schedule.interval_days)
+                if due_date > datetime.utcnow() + timedelta(days=current_user.upcoming_task_window_days):
+                    status_value = 'not_due'
+            elif status_value == 'due_soon' and schedule.interval_days and not last_event:
+                due_date = asset.created_at + timedelta(days=schedule.interval_days)
+                if due_date > datetime.utcnow() + timedelta(days=current_user.upcoming_task_window_days):
+                    status_value = 'not_due'
             item = DashboardItem(
                 asset_id=asset.id,
                 schedule_id=schedule.id,

@@ -8,6 +8,7 @@ export function ProfilePage() {
   const [form, setForm] = useState({
     display_name: '',
     preferred_distance_unit: 'km',
+    upcoming_task_window_days: 14,
     current_password: '',
     new_password: '',
   })
@@ -24,8 +25,9 @@ export function ProfilePage() {
         ...current,
         display_name: me.display_name,
         preferred_distance_unit: me.preferred_distance_unit || 'km',
+        upcoming_task_window_days: me.upcoming_task_window_days || 14,
       }))
-      setTasks(taskList.filter((task) => task.id !== null))
+      setTasks(taskList)
     })
   }, [])
 
@@ -67,6 +69,16 @@ export function ProfilePage() {
     setEditingTaskName('')
   }
 
+  async function saveSuggestionToLibrary(taskNameValue) {
+    const created = await apiFetch('/maintenance-tasks', {
+      method: 'POST',
+      body: JSON.stringify({ task_name: taskNameValue }),
+    })
+    setTasks((current) => current.map((task) => (
+      task.task_name.toLowerCase() === taskNameValue.toLowerCase() && task.id === null ? created : task
+    )))
+  }
+
   return (
     <div className="card narrow-card">
       <form onSubmit={submit}>
@@ -81,6 +93,15 @@ export function ProfilePage() {
       <select id="profile-unit" value={form.preferred_distance_unit} onChange={(e) => setForm({ ...form, preferred_distance_unit: e.target.value })}>
         {DISTANCE_UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
       </select>
+
+      <label htmlFor="profile-upcoming-window">Upcoming Task Window (days)</label>
+      <input
+        id="profile-upcoming-window"
+        type="number"
+        min="1"
+        value={form.upcoming_task_window_days}
+        onChange={(e) => setForm({ ...form, upcoming_task_window_days: Number(e.target.value || 14) })}
+      />
 
       <label htmlFor="profile-current-password">Current Password</label>
       <input id="profile-current-password" type="password" value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} />
@@ -106,8 +127,8 @@ export function ProfilePage() {
       </form>
       <div className="badges">
         {tasks.map((task) => (
-          <div key={task.id} className="badge">
-            {editingTaskId === task.id ? (
+          <div key={`${task.id ?? 'suggestion'}-${task.task_name}`} className="badge">
+            {editingTaskId === task.id && task.id !== null ? (
               <>
                 <input value={editingTaskName} onChange={(e) => setEditingTaskName(e.target.value)} />
                 <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => saveTask(task.id)}>Save</button>
@@ -115,13 +136,19 @@ export function ProfilePage() {
             ) : (
               <>
                 <span>{task.task_name}</span>
-                <button
-                  className="btn btn-sm btn-link"
-                  type="button"
-                  onClick={() => { setEditingTaskId(task.id); setEditingTaskName(task.task_name) }}
-                >
-                  Edit
-                </button>
+                {task.id !== null ? (
+                  <button
+                    className="btn btn-sm btn-link"
+                    type="button"
+                    onClick={() => { setEditingTaskId(task.id); setEditingTaskName(task.task_name) }}
+                  >
+                    Edit
+                  </button>
+                ) : (
+                  <button className="btn btn-sm btn-link" type="button" onClick={() => saveSuggestionToLibrary(task.task_name)}>
+                    Add to Library
+                  </button>
+                )}
               </>
             )}
           </div>

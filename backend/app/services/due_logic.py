@@ -9,13 +9,14 @@ def evaluate_schedule_status(
     latest_meter_values: dict[str, float],
     last_event: MaintenanceEvent | None,
     now: datetime,
+    due_soon_window_days: int = 14,
 ) -> str:
     due_states: list[str] = []
 
     if schedule.interval_days is not None:
         baseline = (last_event.performed_at if last_event else asset.created_at)
         due_date = baseline + timedelta(days=schedule.interval_days)
-        due_soon_date = due_date - timedelta(days=(schedule.due_soon_threshold_days or 0))
+        due_soon_date = due_date - timedelta(days=(schedule.due_soon_threshold_days or due_soon_window_days))
         if now >= due_date:
             due_states.append('overdue')
         elif now >= due_soon_date:

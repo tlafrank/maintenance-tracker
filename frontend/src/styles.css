@@ -17,6 +17,8 @@ fieldset { border: 1px solid #d9dfea; border-radius: .35rem; margin: .25rem 0 .9
 .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .75rem 0; }
 .equal-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: .5rem; }
 .equal-action-btn { flex: 1 1 220px; text-align: center; }
+.asset-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .5rem; }
+.asset-list-item { display: flex; flex-direction: column; gap: .15rem; border: 1px solid #d7dced; border-radius: .4rem; padding: .6rem .7rem; background: #fbfcff; }
 .action-button { min-width: 220px; text-align: center; flex: 1 1 220px; }
 .muted-edit-link { font-size: .9rem; font-weight: normal; color: #667; }
 .badges { display: flex; flex-wrap: wrap; gap: .35rem; margin: .35rem 0 .6rem; }
