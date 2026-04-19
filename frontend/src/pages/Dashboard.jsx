@@ -28,7 +28,20 @@ export function DashboardPage() {
       </section>
       <section className="card">
         <h3 className="h5">{`Due in the next ${dueSoonWeeks} weeks`}</h3>
-        {data.due_soon.map(i => <p key={i.schedule_id}>{i.asset_name}: {i.schedule_title}</p>)}
+        {data.due_soon.length === 0 && <p className="muted-text">No upcoming tasks in this window.</p>}
+        <div className="upcoming-list">
+          {data.due_soon.map((item) => (
+            <div key={item.schedule_id} className="upcoming-item">
+              <div>
+                <strong>{item.schedule_title}</strong>
+                <p className="muted-text mb-0">{item.asset_name}</p>
+              </div>
+              <Link className="btn btn-sm btn-outline-primary" to={`/assets/${item.asset_id}/maintenance-events/new?task=${encodeURIComponent(item.schedule_title)}`}>
+                Record Activity
+              </Link>
+            </div>
+          ))}
+        </div>
       </section>
       <section className="card">
         <h3 className="h5">Recently completed</h3>

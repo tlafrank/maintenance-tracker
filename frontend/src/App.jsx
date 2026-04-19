@@ -26,7 +26,21 @@ export default function App() {
 
   useEffect(() => {
     if (!localStorage.getItem('token')) return
-    apiFetch('/auth/me').then(setMe).catch(() => localStorage.removeItem('token'))
+    let active = true
+    async function refreshSession() {
+      try {
+        const user = await apiFetch('/auth/me')
+        if (active) setMe(user)
+      } catch {
+        // Keep existing token/session in place and retry on next heartbeat.
+      }
+    }
+    refreshSession()
+    const intervalId = setInterval(refreshSession, 10 * 60 * 1000)
+    return () => {
+      active = false
+      clearInterval(intervalId)
+    }
   }, [])
 
   return (

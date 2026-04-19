@@ -8,7 +8,7 @@ A web-first maintenance tracking application for equipment and vehicles such as:
 - EWPs
 - Trailers
 - Generators
-- Other assets with time, hour, distance, or date based servicing needs
+- Other assets with distance-, hours-, or cycle-based servicing needs
 
 The system allows users to register assets, define maintenance schedules, record completed work, and view due or overdue maintenance while logged in.
 
@@ -22,21 +22,22 @@ The goal of this project is to provide a simple but extensible maintenance manag
 
 ### Terminology
 
-- **Maintenance task:** a single actionable item such as _change oil_, _check tyres_, or _replace wipers_.
-- **Maintenance activity:** one recorded service instance that may contain one or more maintenance tasks completed together at the same time/meter reading.
-- **Scheduling rule:** schedules are created for **maintenance tasks** (not whole activities), with optional time-based and/or usage-based intervals.
+- **Service Trigger (asset-level):** what usage an asset accumulates. Allowed values are **Distance**, **Hours**, or **Cycles**.
+- **Reading:** a recorded usage value against the asset’s Service Trigger.
+- **Maintenance task:** a single actionable item such as _change oil_, _check tyres_, or _replace filters_.
+- **Maintenance activity:** one recorded service instance that may contain one or more maintenance tasks.
+- **Service Interval (task-level):** when a maintenance task becomes due; can be **time-based**, **usage-based**, or **both** (whichever comes first).
 
 ### MVP capabilities
 
 - Multi-user authentication (email/password + JWT)
 - Asset registration and categorisation
 - Maintenance reminders based on:
-  - Date/time
-  - Engine hours
-  - Distance
+  - Time-based maintenance intervals
+  - Usage-based maintenance intervals (Distance / Hours / Cycles)
 - Recording maintenance activities and safety checks
 - Viewing maintenance history
-- Tracking current meter values such as odometer or hour meter
+- Tracking current service-trigger readings such as distance, hours, or cycles
 - Generating upcoming and overdue alerts visible when logged in
 - API-first backend to support future mobile clients
 - Docker deployment on a private Ubuntu server

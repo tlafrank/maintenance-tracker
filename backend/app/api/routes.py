@@ -164,6 +164,11 @@ def _owned_asset(asset_id: int, user_id: int, db: Session) -> Asset:
     return asset
 
 
+def _validate_service_interval(interval_days: int | None, interval_distance: float | None, interval_hours: float | None):
+    if interval_days is None and interval_distance is None and interval_hours is None:
+        raise HTTPException(status_code=400, detail='Service interval requires time, service trigger usage, or both.')
+
+
 @router.get('/assets/{asset_id}', response_model=AssetOut)
 def get_asset(asset_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return _owned_asset(asset_id, current_user.id, db)
@@ -271,6 +276,7 @@ def list_schedules(asset_id: int, current_user: User = Depends(get_current_user)
 @router.post('/assets/{asset_id}/schedules', response_model=ScheduleOut)
 def create_schedule(asset_id: int, payload: ScheduleCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _owned_asset(asset_id, current_user.id, db)
+    _validate_service_interval(payload.interval_days, payload.interval_distance, payload.interval_hours)
     schedule = MaintenanceSchedule(asset_id=asset_id, **payload.model_dump())
     db.add(schedule)
     db.commit()
@@ -284,6 +290,7 @@ def update_schedule(schedule_id: int, payload: ScheduleUpdate, current_user: Use
     if not schedule:
         raise HTTPException(status_code=404, detail='Schedule not found')
     _owned_asset(schedule.asset_id, current_user.id, db)
+    _validate_service_interval(payload.interval_days, payload.interval_distance, payload.interval_hours)
     for key, value in payload.model_dump().items():
         setattr(schedule, key, value)
     db.commit()
@@ -297,6 +304,7 @@ def update_schedule_intervals(schedule_id: int, payload: ScheduleIntervalUpdate,
     if not schedule:
         raise HTTPException(status_code=404, detail='Schedule not found')
     _owned_asset(schedule.asset_id, current_user.id, db)
+    _validate_service_interval(payload.interval_days, payload.interval_distance, payload.interval_hours)
 
     schedule.interval_days = payload.interval_days
     schedule.interval_distance = payload.interval_distance

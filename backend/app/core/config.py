@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     database_url: str = 'postgresql+psycopg://maintenance:maintenance@db:5432/maintenance'
     jwt_secret_key: str = 'change-me'
     jwt_algorithm: str = 'HS256'
-    jwt_access_token_expire_minutes: int = 60
+    jwt_access_token_expire_minutes: int = 525600
     cors_origins: str = 'http://localhost:5173'
 
 

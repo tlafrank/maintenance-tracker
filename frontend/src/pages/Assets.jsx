@@ -18,6 +18,13 @@ function usageLabel(intervalBasis) {
   return METER_TYPE_LABELS[intervalBasis] || intervalBasis || 'Usage'
 }
 
+function usageUnit(intervalBasis) {
+  if (intervalBasis === 'distance') return 'km'
+  if (intervalBasis === 'hours') return 'h'
+  if (intervalBasis === 'cycles') return 'cycles'
+  return ''
+}
+
 function formatIntervalValue(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return ''
   return Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 })
@@ -253,8 +260,8 @@ export function AssetFormPage() {
         <input id="asset-registration" value={form.registration_or_serial} onChange={e => setForm({ ...form, registration_or_serial: e.target.value })} />
 
         <fieldset>
-          <legend>Usage Interval Basis</legend>
-          <p className="hint">Separate from elapsed time-based intervals.</p>
+          <legend>Service Trigger</legend>
+          <p className="hint">Choose what usage this asset accumulates for usage-based maintenance.</p>
           {INTERVAL_BASIS_OPTIONS.map((option) => (
             <label key={option.value} className="radio-label">
               <input
@@ -359,7 +366,7 @@ export function AssetEditPage() {
       <input id="edit-asset-registration" value={form.registration_or_serial} onChange={e => setForm({ ...form, registration_or_serial: e.target.value })} />
 
       <fieldset>
-        <legend>Usage Interval Basis</legend>
+        <legend>Service Trigger</legend>
         {INTERVAL_BASIS_OPTIONS.map((option) => (
           <label key={option.value} className="radio-label">
             <input
@@ -432,7 +439,7 @@ export function AssetDetailPage() {
         <h3>Meters</h3>
         {latestReading ? (
           <div className="meter-highlight">
-            <p><strong>Last reading:</strong> {latestReading.reading_value} {latestReadingMeter?.unit || ''}</p>
+            <p><strong>{`Current ${usageLabel(asset.interval_basis)}`}:</strong> {formatIntervalValue(latestReading.reading_value)} {latestReadingMeter?.unit || usageUnit(asset.interval_basis)}</p>
             <p className="muted-text">{formatReadingDate(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>
           </div>
         ) : (
@@ -547,21 +554,21 @@ export function MeterReadingFormPage() {
       <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: `Update Asset ${usageTypeLabel}` }]} />
       <h2>{`Update Asset ${usageTypeLabel}`}</h2>
       {error && <p className="error">{error}</p>}
-      {asset && <p className="hint">Readings are tracked as {METER_TYPE_LABELS[asset.interval_basis] || asset.interval_basis} for this asset.</p>}
+      {asset && <p className="hint">{`Service Trigger: ${usageLabel(asset.interval_basis)} (${usageUnit(asset.interval_basis)})`}</p>}
 
       {primaryCompatibleMeter && (
         <>
-          <label htmlFor="reading-meter">Current Meter</label>
+          <label htmlFor="reading-meter">Service Trigger Reading Source</label>
           <input id="reading-meter" value={`${METER_TYPE_LABELS[primaryCompatibleMeter.meter_type] || primaryCompatibleMeter.meter_type} (${primaryCompatibleMeter.unit})`} disabled />
         </>
       )}
 
       {latestReading && <p className="muted-text">Last recorded {formatReadingDateTime(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>}
       {primaryCompatibleMeter?.current_value !== null && primaryCompatibleMeter?.current_value !== undefined && (
-        <p className="muted-text">Current meter value: {formatIntervalValue(primaryCompatibleMeter.current_value)}</p>
+        <p className="muted-text">{`Current ${usageLabel(asset?.interval_basis)}: ${formatIntervalValue(primaryCompatibleMeter.current_value)} ${usageUnit(asset?.interval_basis)}`}</p>
       )}
 
-      <label htmlFor="reading-value">New Meter Reading</label>
+      <label htmlFor="reading-value">{`New ${usageLabel(asset?.interval_basis)} Reading`}</label>
       <input id="reading-value" required inputMode="decimal" value={readingForm.reading_value} onChange={(e) => setReadingForm({ ...readingForm, reading_value: e.target.value })} />
 
       <div className="actions">
@@ -576,6 +583,7 @@ export function MaintenanceEventFormPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
   const editEventId = searchParams.get('edit')
+  const prefillTask = searchParams.get('task')
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
   const [meters, setMeters] = useState([])
@@ -603,6 +611,15 @@ export function MaintenanceEventFormPage() {
       setForm({ completion_meter_value: event.completion_meter_value ?? '', notes: event.notes ?? '' })
     })
   }, [id, editEventId])
+
+  useEffect(() => {
+    if (!prefillTask || editEventId) return
+    setTasks((current) => {
+      const trimmed = prefillTask.trim()
+      if (!trimmed || current.some((task) => task.toLowerCase() === trimmed.toLowerCase())) return current
+      return [...current, trimmed]
+    })
+  }, [prefillTask, editEventId])
 
   function addTask(taskValue) {
     const trimmed = taskValue.trim()
@@ -686,7 +703,7 @@ export function MaintenanceEventFormPage() {
         {taskSuggestions.map((task) => <option key={task} value={task} />)}
       </datalist>
       <p className="hint">Type a task and press comma to add it. Click a badge to remove it.</p>
-      <label htmlFor="completion-meter">{`Current Asset ${usageLabel(asset?.interval_basis)}`}</label>
+      <label htmlFor="completion-meter">{`Current ${usageLabel(asset?.interval_basis)}`}</label>
       <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
       {activeMeter?.current_value !== null && activeMeter?.current_value !== undefined && (
         <p className="hint">Current recorded value: {formatIntervalValue(activeMeter.current_value)} {activeMeter.unit}</p>
@@ -732,7 +749,7 @@ export function ScheduleFormPage() {
     const intervalDays = selectedTimeInterval?.days ?? null
     const usageIntervalValue = form.usage_interval ? Number(form.usage_interval) : null
     if (intervalDays === null && usageIntervalValue === null) {
-      setError('Select a time interval and/or enter a usage interval.')
+      setError('A service interval is required: time-based, usage-based, or both.')
       return
     }
 
@@ -756,7 +773,7 @@ export function ScheduleFormPage() {
     <form onSubmit={submit} className="card narrow-card">
       <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Add scheduled maintenance activity' }]} />
       <h2>Add scheduled maintenance activity</h2>
-      {asset && <p className="hint">Create a recurring schedule for one maintenance task on <strong>{asset.name}</strong>.</p>}
+      {asset && <p className="hint">Configure a service interval for one maintenance task on <strong>{asset.name}</strong>.</p>}
       {error && <p className="error">{error}</p>}
 
       <label htmlFor="schedule-title">Maintenance Task</label>
@@ -770,14 +787,15 @@ export function ScheduleFormPage() {
       <label htmlFor="schedule-description">Description</label>
       <textarea id="schedule-description" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
 
-      <label htmlFor="schedule-time-interval">Time Interval (optional)</label>
+      <label htmlFor="schedule-time-interval">Service Interval - Time-based maintenance (optional)</label>
       <select id="schedule-time-interval" value={form.time_interval} onChange={(e) => setForm({ ...form, time_interval: e.target.value })}>
         <option value="">No time interval</option>
         {TIME_INTERVAL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
 
-      <label htmlFor="schedule-usage-interval">Usage Interval (optional, {METER_TYPE_LABELS[asset?.interval_basis] || asset?.interval_basis})</label>
+      <label htmlFor="schedule-usage-interval">{`Service Interval - Usage-based maintenance (optional, ${usageLabel(asset?.interval_basis)} in ${usageUnit(asset?.interval_basis)})`}</label>
       <input id="schedule-usage-interval" inputMode="decimal" value={form.usage_interval} onChange={(e) => setForm({ ...form, usage_interval: e.target.value })} />
+      <p className="hint">Set time, service trigger usage, or both (whichever comes first).</p>
 
       <div className="actions">
         <button className="btn btn-primary" type="submit">Save schedule</button>
