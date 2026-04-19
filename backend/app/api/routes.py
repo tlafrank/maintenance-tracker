@@ -22,6 +22,7 @@ from app.schemas.schemas import (
     MaintenanceEventOut,
     MaintenanceActivitySuggestion,
     MaintenanceTaskSuggestion,
+    MaintenanceTaskRename,
     MeterCreate,
     MeterOut,
     MeterReadingCreate,
@@ -425,6 +426,38 @@ def list_maintenance_tasks(current_user: User = Depends(get_current_user), db: S
     return tasks
 
 
+@router.put('/maintenance-tasks/rename')
+def rename_maintenance_task(payload: MaintenanceTaskRename, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    old_name = payload.old_name.strip()
+    new_name = payload.new_name.strip()
+    if not old_name or not new_name:
+        raise HTTPException(status_code=400, detail='Both old and new task names are required')
+
+    events = db.scalars(
+        select(MaintenanceEvent)
+        .where(MaintenanceEvent.performed_by_user_id == current_user.id)
+    ).all()
+    updated_events = 0
+    for event in events:
+        updated = False
+        tasks = [part.strip() for part in event.event_type.split(',')]
+        normalized_tasks: list[str] = []
+        for task in tasks:
+            if not task:
+                continue
+            if task.lower() == old_name.lower():
+                normalized_tasks.append(new_name)
+                updated = True
+            else:
+                normalized_tasks.append(task)
+        if updated:
+            event.event_type = ', '.join(normalized_tasks)
+            updated_events += 1
+
+    db.commit()
+    return {'updated_events': updated_events}
+
+
 @router.get('/dashboard', response_model=DashboardOut)
 def dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     assets = db.scalars(select(Asset).where(Asset.owner_user_id == current_user.id, Asset.archived_at.is_(None))).all()
@@ -454,14 +487,26 @@ def dashboard(current_user: User = Depends(get_current_user), db: Session = Depe
             elif status_value == 'due_soon':
                 due_soon.append(item)
 
-    recent_events = db.scalars(
-        select(MaintenanceEvent)
+    recent_events = db.execute(
+        select(MaintenanceEvent, Asset.name)
         .join(Asset, Asset.id == MaintenanceEvent.asset_id)
         .where(Asset.owner_user_id == current_user.id)
         .order_by(desc(MaintenanceEvent.performed_at))
         .limit(10)
     ).all()
-    return DashboardOut(due_soon=due_soon, overdue=overdue, recent_events=recent_events)
+    recent_items = [
+        DashboardOut.RecentEventItem(
+            id=event.id,
+            asset_id=event.asset_id,
+            asset_name=asset_name,
+            performed_at=event.performed_at,
+            event_type=event.event_type,
+            notes=event.notes,
+            completion_meter_value=event.completion_meter_value,
+        )
+        for event, asset_name in recent_events
+    ]
+    return DashboardOut(due_soon=due_soon, overdue=overdue, recent_events=recent_items)
 
 
 @router.get('/alerts')

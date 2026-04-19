@@ -18,6 +18,11 @@ function usageLabel(intervalBasis) {
   return METER_TYPE_LABELS[intervalBasis] || intervalBasis || 'Usage'
 }
 
+function formatIntervalValue(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return ''
+  return Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 })
+}
+
 const TIME_INTERVAL_OPTIONS = [
   { value: 'weekly', label: 'Weekly', days: 7 },
   { value: 'fortnightly', label: 'Fortnightly', days: 14 },
@@ -431,8 +436,8 @@ export function AssetDetailPage() {
           const status = daysLeft === null ? 'future' : (daysLeft < 0 ? 'overdue' : (daysLeft <= 14 ? 'upcoming' : 'future'))
           const usageUnit = asset.interval_basis === 'distance' ? 'km' : asset.interval_basis
           const intervalParts = [intervalPeriodLabel(schedule.interval_days)]
-          if (schedule.interval_distance) intervalParts.push(`Every ${schedule.interval_distance} ${usageUnit}`)
-          if (schedule.interval_hours) intervalParts.push(`Every ${schedule.interval_hours} hours`)
+          if (schedule.interval_distance) intervalParts.push(`Every ${formatIntervalValue(schedule.interval_distance)} ${usageUnit}`)
+          if (schedule.interval_hours) intervalParts.push(`Every ${formatIntervalValue(schedule.interval_hours)} hours`)
           const intervalSummary = intervalParts.filter(Boolean).join(' | ')
           return (
             <div key={schedule.id} className="schedule-card">
@@ -448,7 +453,7 @@ export function AssetDetailPage() {
         <h3>Maintenance history</h3>
         {events.map((ev) => (
           <div key={ev.id} className="meter-highlight">
-            <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDate(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `@ ${ev.completion_meter_value} km` : ''}</p>
+            <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDate(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `@ ${formatIntervalValue(ev.completion_meter_value)} km` : ''}</p>
             <div className="badges">
               {ev.event_type.split(',').map((task) => {
                 const trimmedTask = task.trim()
@@ -540,7 +545,7 @@ export function MeterReadingFormPage() {
 
       {latestReading && <p className="muted-text">Last recorded {formatReadingDateTime(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>}
       {primaryCompatibleMeter?.current_value !== null && primaryCompatibleMeter?.current_value !== undefined && (
-        <p className="muted-text">Current meter value: {primaryCompatibleMeter.current_value}</p>
+        <p className="muted-text">Current meter value: {formatIntervalValue(primaryCompatibleMeter.current_value)}</p>
       )}
 
       <label htmlFor="reading-value">New Meter Reading</label>
@@ -560,10 +565,11 @@ export function MaintenanceEventFormPage() {
   const editEventId = searchParams.get('edit')
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
-  const [form, setForm] = useState({ completion_meter_value: '' })
+  const [form, setForm] = useState({ completion_meter_value: '', notes: '' })
   const [taskInput, setTaskInput] = useState('')
   const [tasks, setTasks] = useState([])
   const [taskSuggestions, setTaskSuggestions] = useState([])
+  const [taskRename, setTaskRename] = useState({ old_name: '', new_name: '' })
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -580,7 +586,7 @@ export function MaintenanceEventFormPage() {
       const event = events.find((candidate) => String(candidate.id) === String(editEventId))
       if (!event) return
       setTasks(event.event_type.split(',').map((task) => task.trim()).filter(Boolean))
-      setForm({ completion_meter_value: event.completion_meter_value ?? '' })
+      setForm({ completion_meter_value: event.completion_meter_value ?? '', notes: event.notes ?? '' })
     })
   }, [id, editEventId])
 
@@ -613,7 +619,7 @@ export function MaintenanceEventFormPage() {
     setTaskInput('')
     const payload = {
       event_type: mergedTasks.join(', '),
-      notes: null,
+      notes: form.notes?.trim() || null,
       completion_meter_value: form.completion_meter_value ? Number(form.completion_meter_value) : null,
     }
     await apiFetch(editEventId ? `/maintenance-events/${editEventId}` : `/assets/${id}/maintenance-events`, {
@@ -625,6 +631,22 @@ export function MaintenanceEventFormPage() {
     navigate(`/assets/${id}`)
   }
 
+  async function renameTask(e) {
+    e.preventDefault()
+    if (!taskRename.old_name.trim() || !taskRename.new_name.trim()) return
+    await apiFetch('/maintenance-tasks/rename', {
+      method: 'PUT',
+      body: JSON.stringify(taskRename),
+    })
+    setTaskSuggestions((current) => current.map((task) => (
+      task.toLowerCase() === taskRename.old_name.trim().toLowerCase() ? taskRename.new_name.trim() : task
+    )))
+    setTasks((current) => current.map((task) => (
+      task.toLowerCase() === taskRename.old_name.trim().toLowerCase() ? taskRename.new_name.trim() : task
+    )))
+    setTaskRename({ old_name: '', new_name: '' })
+  }
+
   return (
     <form onSubmit={submit} className="card narrow-card">
       <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Record Maintenance Activity' }]} />
@@ -633,28 +655,7 @@ export function MaintenanceEventFormPage() {
       {error && <p className="error">{error}</p>}
 
       <label htmlFor="task-input">Maintenance Tasks</label>
-      <div className="input-group">
-        <input
-          className="form-control"
-          id="task-input"
-          list="task-options"
-          value={taskInput}
-          onChange={(e) => setTaskInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === ',') {
-              e.preventDefault()
-              addTask(taskInput)
-            }
-          }}
-        />
-        <button type="button" className="btn btn-outline-primary" onClick={() => addTask(taskInput)}>
-          Add Task
-        </button>
-      </div>
-      <datalist id="task-options">
-        {taskSuggestions.map((task) => <option key={task} value={task} />)}
-      </datalist>
-      <div className="badges">
+      <div className="task-input-box">
         {tasks.map((task) => (
           <span key={task} className="badge">
             {task}
@@ -667,11 +668,40 @@ export function MaintenanceEventFormPage() {
             </button>
           </span>
         ))}
+        <input
+          className="task-inline-input"
+          id="task-input"
+          list="task-options"
+          value={taskInput}
+          onChange={(e) => setTaskInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === ',') {
+              e.preventDefault()
+              addTask(taskInput)
+            }
+          }}
+        />
+        <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => addTask(taskInput)}>
+          Add Task
+        </button>
       </div>
+      <datalist id="task-options">
+        {taskSuggestions.map((task) => <option key={task} value={task} />)}
+      </datalist>
       <p className="hint">Type a task and press comma to add it. Click a badge to remove it.</p>
-
-      <label htmlFor="completion-meter">{`Asset ${usageLabel(asset?.interval_basis)} at Completion`}</label>
+      <label htmlFor="completion-meter">{`Current Asset ${usageLabel(asset?.interval_basis)}`}</label>
       <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
+      <label htmlFor="maintenance-notes">Notes</label>
+      <textarea id="maintenance-notes" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+
+      <fieldset>
+        <legend>Rename Existing Task</legend>
+        <label htmlFor="rename-old-task">Current task name</label>
+        <input id="rename-old-task" list="task-options" value={taskRename.old_name} onChange={(e) => setTaskRename((current) => ({ ...current, old_name: e.target.value }))} />
+        <label htmlFor="rename-new-task">New task name</label>
+        <input id="rename-new-task" value={taskRename.new_name} onChange={(e) => setTaskRename((current) => ({ ...current, new_name: e.target.value }))} />
+        <button className="btn btn-outline-primary" type="button" onClick={renameTask}>Rename Task</button>
+      </fieldset>
 
       <div className="actions">
         <button className="btn btn-primary" type="submit" disabled={tasks.length === 0 && !taskInput.trim()}>{editEventId ? 'Update Activity' : 'Record Maintenance Activity'}</button>

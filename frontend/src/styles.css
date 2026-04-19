@@ -19,6 +19,25 @@ fieldset { border: 1px solid #d9dfea; border-radius: .35rem; margin: .25rem 0 .9
 .badges { display: flex; flex-wrap: wrap; gap: .35rem; margin: .35rem 0 .6rem; }
 .badge { background: #e7eefc; color: #234; border: 1px solid #c7d5f7; border-radius: 999px; padding: .2rem .55rem; font-size: .85rem; display: inline-flex; align-items: center; gap: .35rem; }
 .badge-remove { border: none; background: transparent; padding: 0; font-size: .9rem; line-height: 1; }
+.task-input-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem;
+  border: 1px solid #ccd;
+  border-radius: .35rem;
+  background: #fff;
+  padding: .35rem;
+  margin: .35rem 0 .75rem;
+}
+.task-inline-input {
+  border: none;
+  flex: 1 1 180px;
+  min-width: 180px;
+  margin: 0;
+  padding: .35rem;
+}
+.task-inline-input:focus { outline: none; }
 .schedule-card { border: 1px solid #d7dced; border-radius: .4rem; padding: .55rem .7rem; margin-bottom: .55rem; background: #fbfcff; }
 .status-overdue { background: #ffe5e5; border-color: #f3b8b8; color: #8c1f1f; }
 .status-upcoming { background: #fff5df; border-color: #f0d7a3; color: #7a5200; }

@@ -163,6 +163,11 @@ class MaintenanceTaskSuggestion(BaseModel):
     task_name: str
 
 
+class MaintenanceTaskRename(BaseModel):
+    old_name: str
+    new_name: str
+
+
 class DashboardItem(BaseModel):
     asset_id: int
     schedule_id: int
@@ -172,9 +177,18 @@ class DashboardItem(BaseModel):
 
 
 class DashboardOut(BaseModel):
+    class RecentEventItem(BaseModel):
+        id: int
+        asset_id: int
+        asset_name: str
+        performed_at: datetime
+        event_type: str
+        notes: str | None
+        completion_meter_value: float | None
+
     due_soon: list[DashboardItem]
     overdue: list[DashboardItem]
-    recent_events: list[MaintenanceEventOut]
+    recent_events: list[RecentEventItem]
 
 
 class UserProfileUpdate(BaseModel):
