@@ -20,6 +20,12 @@ This project is designed as a Docker-hosted application running on an Ubuntu ser
 
 The goal of this project is to provide a simple but extensible maintenance management app for personal, household, workshop, or small team use.
 
+### Terminology
+
+- **Maintenance task:** a single actionable item such as _change oil_, _check tyres_, or _replace wipers_.
+- **Maintenance activity:** one recorded service instance that may contain one or more maintenance tasks completed together at the same time/meter reading.
+- **Scheduling rule:** schedules are created for **maintenance tasks** (not whole activities), with optional time-based and/or usage-based intervals.
+
 ### MVP capabilities
 
 - Multi-user authentication (email/password + JWT)

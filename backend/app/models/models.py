@@ -18,9 +18,12 @@ class User(TimestampMixin, Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[str] = mapped_column(String(255))
+    preferred_distance_unit: Mapped[str] = mapped_column(String(10), default='km')
+    upcoming_task_window_days: Mapped[int] = mapped_column(Integer, default=14)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     assets: Mapped[list['Asset']] = relationship(back_populates='owner')
+    maintenance_tasks: Mapped[list['MaintenanceTaskTemplate']] = relationship(back_populates='owner', cascade='all, delete-orphan')
 
 
 class AssetType(TimestampMixin, Base):
@@ -113,3 +116,13 @@ class MaintenanceEvent(Base):
 
     asset: Mapped['Asset'] = relationship(back_populates='events')
     schedule: Mapped['MaintenanceSchedule | None'] = relationship(back_populates='events')
+
+
+class MaintenanceTaskTemplate(TimestampMixin, Base):
+    __tablename__ = 'maintenance_task_templates'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
+    task_name: Mapped[str] = mapped_column(String(100))
+
+    owner: Mapped['User'] = relationship(back_populates='maintenance_tasks')
