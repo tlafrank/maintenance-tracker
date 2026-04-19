@@ -1,7 +1,7 @@
 """add maintenance task templates
 
 Revision ID: 0004_maintenance_task_templates
-Revises: 0003_user_preferred_distance_unit
+Revises: 0003_user_pref_dist_unit
 Create Date: 2026-04-19
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '0004_maintenance_task_templates'
-down_revision = '0003_user_preferred_distance_unit'
+down_revision = '0003_user_pref_dist_unit'
 branch_labels = None
 depends_on = None
 
