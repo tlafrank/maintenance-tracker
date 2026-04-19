@@ -41,6 +41,17 @@ const TIME_INTERVAL_OPTIONS = [
   { value: 'five-yearly', label: 'Five-yearly', days: 1825 },
 ]
 
+function timeIntervalValueFromDays(intervalDays) {
+  const option = TIME_INTERVAL_OPTIONS.find((candidate) => candidate.days === Number(intervalDays))
+  return option?.value || ''
+}
+
+function localDateInputValue() {
+  const now = new Date()
+  const tzOffsetMs = now.getTimezoneOffset() * 60 * 1000
+  return new Date(now.getTime() - tzOffsetMs).toISOString().slice(0, 10)
+}
+
 function relativeTimeFromNow(isoDateString) {
   if (!isoDateString) return 'Unknown'
   const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
@@ -385,7 +396,7 @@ export function AssetEditPage() {
       <textarea id="edit-asset-notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={5} />
 
       <div className="actions">
-        <button className="btn btn-primary" type="submit">Save changes</button>
+        <button className="btn btn-primary" type="submit">Save service interval</button>
         <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
@@ -450,7 +461,7 @@ export function AssetDetailPage() {
         <h3>Scheduled Maintenance Tasks</h3>
         {schedules.map((schedule) => {
           const lastMatchingEvent = events.find((event) => event.event_type.split(',').map((task) => task.trim().toLowerCase()).includes(schedule.title.trim().toLowerCase()))
-          const referenceDate = lastMatchingEvent ? new Date(lastMatchingEvent.performed_at) : new Date()
+          const referenceDate = lastMatchingEvent ? new Date(lastMatchingEvent.performed_at) : new Date(asset.created_at)
           const dueDate = schedule.interval_days ? new Date(referenceDate.getTime() + (schedule.interval_days * 24 * 60 * 60 * 1000)) : null
           const daysLeft = dueDate ? Math.ceil((dueDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null
           const status = daysLeft === null ? 'future' : (daysLeft < 0 ? 'overdue' : (daysLeft <= 14 ? 'upcoming' : 'future'))
@@ -590,7 +601,7 @@ export function MaintenanceEventFormPage() {
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
   const [meters, setMeters] = useState([])
-  const [form, setForm] = useState({ completion_meter_value: '', notes: '' })
+  const [form, setForm] = useState({ completion_meter_value: '', notes: '', performed_date: localDateInputValue() })
   const [taskInput, setTaskInput] = useState('')
   const [tasks, setTasks] = useState([])
   const [taskSuggestions, setTaskSuggestions] = useState([])
@@ -611,7 +622,11 @@ export function MaintenanceEventFormPage() {
       const event = events.find((candidate) => String(candidate.id) === String(editEventId))
       if (!event) return
       setTasks(event.event_type.split(',').map((task) => task.trim()).filter(Boolean))
-      setForm({ completion_meter_value: event.completion_meter_value ?? '', notes: event.notes ?? '' })
+      setForm({
+        completion_meter_value: event.completion_meter_value ?? '',
+        notes: event.notes ?? '',
+        performed_date: event.performed_at ? event.performed_at.slice(0, 10) : localDateInputValue(),
+      })
     })
   }, [id, editEventId])
 
@@ -632,6 +647,11 @@ export function MaintenanceEventFormPage() {
       return [...current, trimmed]
     })
     setTaskInput('')
+  }
+
+  function commitTaskFromInput() {
+    if (!taskInput.trim()) return
+    addTask(taskInput)
   }
 
   function tasksWithPendingInput() {
@@ -655,6 +675,7 @@ export function MaintenanceEventFormPage() {
       event_type: mergedTasks.join(', '),
       notes: form.notes?.trim() || null,
       completion_meter_value: form.completion_meter_value ? Number(form.completion_meter_value) : null,
+      performed_at: form.performed_date ? `${form.performed_date}T00:00:00` : null,
     }
     await apiFetch(editEventId ? `/maintenance-events/${editEventId}` : `/assets/${id}/maintenance-events`, {
       method: editEventId ? 'PUT' : 'POST',
@@ -693,9 +714,20 @@ export function MaintenanceEventFormPage() {
           id="task-input"
           list="task-options"
           value={taskInput}
-          onChange={(e) => setTaskInput(e.target.value)}
+          onChange={(e) => {
+            const nextValue = e.target.value
+            setTaskInput(nextValue)
+            if (taskSuggestions.some((task) => task.toLowerCase() === nextValue.trim().toLowerCase())) {
+              addTask(nextValue)
+            }
+          }}
+          onBlur={commitTaskFromInput}
           onKeyDown={(e) => {
             if (e.key === ',') {
+              e.preventDefault()
+              addTask(taskInput)
+            }
+            if (e.key === 'Enter') {
               e.preventDefault()
               addTask(taskInput)
             }
@@ -703,14 +735,18 @@ export function MaintenanceEventFormPage() {
         />
       </div>
       <datalist id="task-options">
-        {taskSuggestions.map((task) => <option key={task} value={task} />)}
+        {taskSuggestions
+          .filter((task) => !tasks.some((selectedTask) => selectedTask.toLowerCase() === task.toLowerCase()))
+          .map((task) => <option key={task} value={task} />)}
       </datalist>
       <p className="hint">Type a task and press comma to add it. Click a badge to remove it.</p>
-      <label htmlFor="completion-meter">{`Current ${usageLabel(asset?.service_trigger)}`}</label>
+      <label htmlFor="completion-meter">{`Current ${usageLabel(asset?.service_trigger)} (Service Trigger: ${usageLabel(asset?.service_trigger)})`}</label>
       <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
       {activeMeter?.current_value !== null && activeMeter?.current_value !== undefined && (
         <p className="hint">Current recorded value: {formatIntervalValue(activeMeter.current_value)} {activeMeter.unit}</p>
       )}
+      <label htmlFor="performed-date">Activity Date</label>
+      <input id="performed-date" type="date" value={form.performed_date} onChange={(e) => setForm({ ...form, performed_date: e.target.value })} />
       <label htmlFor="maintenance-notes">Notes</label>
       <textarea id="maintenance-notes" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
 
@@ -814,7 +850,7 @@ export function ScheduleEditPage() {
   const { id, scheduleId } = useParams()
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
-  const [form, setForm] = useState({ title: '', description: '', interval_days: '', usage_interval: '' })
+  const [form, setForm] = useState({ title: '', description: '', time_interval: '', usage_interval: '' })
   const [schedule, setSchedule] = useState(null)
   const [error, setError] = useState('')
 
@@ -833,7 +869,7 @@ export function ScheduleEditPage() {
         setForm({
           title: found.title,
           description: found.description || '',
-          interval_days: found.interval_days ?? '',
+          time_interval: timeIntervalValueFromDays(found.interval_days),
           usage_interval: usageInterval ?? '',
         })
       })
@@ -843,8 +879,10 @@ export function ScheduleEditPage() {
   async function submit(e) {
     e.preventDefault()
     if (!schedule) return
+    const selectedTimeInterval = TIME_INTERVAL_OPTIONS.find((option) => option.value === form.time_interval)
+    const intervalDays = selectedTimeInterval?.days ?? null
     const usageIntervalValue = form.usage_interval ? Number(form.usage_interval) : null
-    if (!form.interval_days && usageIntervalValue === null) {
+    if (intervalDays === null && usageIntervalValue === null) {
       setError('A service interval is required: time-based, usage-based, or both.')
       return
     }
@@ -858,7 +896,7 @@ export function ScheduleEditPage() {
       body: JSON.stringify({
         ...schedule,
         ...form,
-        interval_days: form.interval_days ? Number(form.interval_days) : null,
+        interval_days: intervalDays,
         ...usagePayload,
       }),
     })
@@ -874,12 +912,16 @@ export function ScheduleEditPage() {
       <input id="edit-schedule-title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       <label htmlFor="edit-schedule-description">Description</label>
       <textarea id="edit-schedule-description" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-      <label htmlFor="edit-schedule-days">Service Interval - Time (days)</label>
-      <input id="edit-schedule-days" inputMode="numeric" value={form.interval_days} onChange={(e) => setForm({ ...form, interval_days: e.target.value })} />
-      <label htmlFor="edit-schedule-usage">{`Service Interval - ${usageLabel(asset?.service_trigger)} (${usageUnit(asset?.service_trigger)})`}</label>
+      <label htmlFor="edit-schedule-time-interval">Service Interval - Time-based maintenance (optional)</label>
+      <select id="edit-schedule-time-interval" value={form.time_interval} onChange={(e) => setForm({ ...form, time_interval: e.target.value })}>
+        <option value="">No time interval</option>
+        {TIME_INTERVAL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      <label htmlFor="edit-schedule-usage">{`Service Interval - Usage-based maintenance (optional, ${usageLabel(asset?.service_trigger)} in ${usageUnit(asset?.service_trigger)})`}</label>
       <input id="edit-schedule-usage" inputMode="decimal" value={form.usage_interval} onChange={(e) => setForm({ ...form, usage_interval: e.target.value })} />
+      <p className="hint">Set time, service trigger usage, or both (whichever comes first).</p>
       <div className="actions">
-        <button className="btn btn-primary" type="submit">Save changes</button>
+        <button className="btn btn-primary" type="submit">Save service interval</button>
         <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>

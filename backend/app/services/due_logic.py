@@ -12,13 +12,6 @@ def evaluate_schedule_status(
     due_soon_window_days: int = 14,
 ) -> str:
     due_states: list[str] = []
-    if not last_event and (
-        schedule.interval_days is not None
-        or schedule.interval_distance is not None
-        or schedule.interval_hours is not None
-        or schedule.interval_cycles is not None
-    ):
-        return 'overdue'
 
     if schedule.interval_days is not None:
         baseline = (last_event.performed_at if last_event else asset.created_at)
