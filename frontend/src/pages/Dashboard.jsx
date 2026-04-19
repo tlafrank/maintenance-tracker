@@ -25,6 +25,13 @@ export function DashboardPage() {
     })
   }, [])
   const dueSoonWeeks = Math.max(1, Math.ceil(upcomingWindowDays / 7))
+  const dueSoonByAsset = data.due_soon.reduce((acc, item) => {
+    const existing = acc.get(item.asset_id) || { asset_id: item.asset_id, asset_name: item.asset_name, tasks: [] }
+    existing.tasks.push(item.schedule_title)
+    acc.set(item.asset_id, existing)
+    return acc
+  }, new Map())
+  const groupedDueSoon = Array.from(dueSoonByAsset.values())
 
   return (
     <div className="grid">
@@ -37,13 +44,13 @@ export function DashboardPage() {
         <h3 className="h5">{`Due in the next ${dueSoonWeeks} weeks`}</h3>
         {data.due_soon.length === 0 && <p className="muted-text">No upcoming tasks in this window.</p>}
         <div className="upcoming-list">
-          {data.due_soon.map((item) => (
-            <div key={item.schedule_id} className="upcoming-item">
+          {groupedDueSoon.map((item) => (
+            <div key={item.asset_id} className="upcoming-item">
               <div>
-                <strong>{item.schedule_title}</strong>
-                <p className="muted-text mb-0">{item.asset_name}</p>
+                <strong>{item.asset_name}</strong>
+                <p className="muted-text mb-0">{item.tasks.join(', ')}</p>
               </div>
-              <Link className="btn btn-sm btn-outline-primary" to={`/assets/${item.asset_id}/maintenance-events/new?task=${encodeURIComponent(item.schedule_title)}`}>
+              <Link className="btn btn-sm btn-outline-primary" to={`/assets/${item.asset_id}/maintenance-events/new?task=${encodeURIComponent(item.tasks.join(', '))}`}>
                 Record Activity
               </Link>
             </div>

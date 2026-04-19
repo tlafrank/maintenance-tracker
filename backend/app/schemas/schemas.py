@@ -70,6 +70,7 @@ class AssetUpdate(AssetBase):
 class AssetOut(AssetBase):
     id: int
     owner_user_id: int
+    created_at: datetime
 
     class Config:
         from_attributes = True
