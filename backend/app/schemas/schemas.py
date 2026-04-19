@@ -18,6 +18,8 @@ class UserOut(BaseModel):
     id: int
     email: EmailStr
     display_name: str
+    preferred_distance_unit: str = 'km'
+    upcoming_task_window_days: int = 14
     is_active: bool
 
     class Config:
@@ -81,7 +83,7 @@ class MeterOut(BaseModel):
 
 
 class MeterReadingCreate(BaseModel):
-    meter_id: int
+    meter_id: int | None = None
     reading_value: float
     reading_timestamp: datetime | None = None
     notes: str | None = None
@@ -115,6 +117,12 @@ class ScheduleUpdate(ScheduleCreate):
     pass
 
 
+class ScheduleIntervalUpdate(BaseModel):
+    interval_days: int | None = None
+    interval_distance: float | None = None
+    interval_hours: float | None = None
+
+
 class ScheduleOut(ScheduleCreate):
     id: int
     asset_id: int
@@ -145,6 +153,31 @@ class MaintenanceEventOut(BaseModel):
         from_attributes = True
 
 
+class MaintenanceActivitySuggestion(BaseModel):
+    activity_name: str
+    last_performed_at: datetime
+    last_notes: str | None = None
+    last_completion_meter_value: float | None = None
+
+
+class MaintenanceTaskSuggestion(BaseModel):
+    id: int | None = None
+    task_name: str
+
+
+class MaintenanceTaskRename(BaseModel):
+    old_name: str
+    new_name: str
+
+
+class MaintenanceTaskCreate(BaseModel):
+    task_name: str
+
+
+class MaintenanceTaskUpdate(BaseModel):
+    task_name: str
+
+
 class DashboardItem(BaseModel):
     asset_id: int
     schedule_id: int
@@ -154,6 +187,23 @@ class DashboardItem(BaseModel):
 
 
 class DashboardOut(BaseModel):
+    class RecentEventItem(BaseModel):
+        id: int
+        asset_id: int
+        asset_name: str
+        performed_at: datetime
+        event_type: str
+        notes: str | None
+        completion_meter_value: float | None
+
     due_soon: list[DashboardItem]
     overdue: list[DashboardItem]
-    recent_events: list[MaintenanceEventOut]
+    recent_events: list[RecentEventItem]
+
+
+class UserProfileUpdate(BaseModel):
+    display_name: str
+    preferred_distance_unit: str = 'km'
+    upcoming_task_window_days: int = 14
+    current_password: str | None = None
+    new_password: str | None = None

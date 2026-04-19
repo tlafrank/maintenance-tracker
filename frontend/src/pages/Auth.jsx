@@ -28,12 +28,14 @@ export function LoginPage({ onLogin }) {
   }
 
   return (
-    <form onSubmit={submit} className="card">
-      <h2>Login</h2>
-      <input required type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
-      <input required type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
+    <form onSubmit={submit} className="card narrow-card">
+      <h2 className="h4">Login</h2>
+      <label htmlFor="login-email">Email</label>
+      <input id="login-email" className="form-control" required type="email" value={email} onChange={e => setEmail(e.target.value)} />
+      <label htmlFor="login-password">Password</label>
+      <input id="login-password" className="form-control" required type="password" value={password} onChange={e => setPassword(e.target.value)} />
       {error && <p className="error">{error}</p>}
-      <button type="submit">Sign in</button>
+      <button className="btn btn-primary" type="submit">Sign in</button>
     </form>
   )
 }
@@ -56,14 +58,17 @@ export function RegisterPage() {
   }
 
   return (
-    <form onSubmit={submit} className="card">
-      <h2>Register</h2>
-      <input required type="email" placeholder="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-      <input required placeholder="Display name" value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })} />
-      <input required type="password" placeholder="Password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+    <form onSubmit={submit} className="card narrow-card">
+      <h2 className="h4">Register</h2>
+      <label htmlFor="register-email">Email</label>
+      <input id="register-email" className="form-control" required type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+      <label htmlFor="register-name">Display name</label>
+      <input id="register-name" className="form-control" required value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })} />
+      <label htmlFor="register-password">Password</label>
+      <input id="register-password" className="form-control" required type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
       {error && <p className="error">{error}</p>}
       {message && <p>{message}</p>}
-      <button type="submit">Create account</button>
+      <button className="btn btn-primary" type="submit">Create account</button>
     </form>
   )
 }
