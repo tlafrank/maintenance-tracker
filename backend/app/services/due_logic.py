@@ -12,7 +12,12 @@ def evaluate_schedule_status(
     due_soon_window_days: int = 14,
 ) -> str:
     due_states: list[str] = []
-    if not last_event and (schedule.interval_days is not None or schedule.interval_distance is not None or schedule.interval_hours is not None):
+    if not last_event and (
+        schedule.interval_days is not None
+        or schedule.interval_distance is not None
+        or schedule.interval_hours is not None
+        or schedule.interval_cycles is not None
+    ):
         return 'overdue'
 
     if schedule.interval_days is not None:
@@ -45,6 +50,16 @@ def evaluate_schedule_status(
                 due_states.append('overdue')
             elif hours >= due_soon_at:
                 due_states.append('due_soon')
+    if schedule.interval_cycles is not None:
+        cycles = latest_meter_values.get('cycles')
+        baseline = last_event.completion_meter_value if last_event and last_event.completion_meter_value is not None else 0
+        if cycles is not None:
+            due_at = baseline + schedule.interval_cycles
+            due_soon_at = due_at - (schedule.due_soon_threshold_cycles or 0)
+            if cycles >= due_at:
+                due_states.append('overdue')
+            elif cycles >= due_soon_at:
+                due_states.append('due_soon')
 
     if 'overdue' in due_states:
         return 'overdue'
@@ -58,5 +73,5 @@ def latest_meter_map(meters: list[Meter]) -> dict[str, float]:
     for meter in meters:
         if meter.current_value is None:
             continue
-        result[meter.meter_type] = float(meter.current_value)
+        result[meter.service_trigger] = float(meter.current_value)
     return result

@@ -45,7 +45,7 @@ class Asset(TimestampMixin, Base):
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     registration_or_serial: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    interval_basis: Mapped[str] = mapped_column(String(20), default='distance')
+    service_trigger: Mapped[str] = mapped_column('interval_basis', String(20), default='distance')
     archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     owner: Mapped['User'] = relationship(back_populates='assets')
@@ -59,7 +59,7 @@ class Meter(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey('assets.id'), index=True)
-    meter_type: Mapped[str] = mapped_column(String(50))
+    service_trigger: Mapped[str] = mapped_column('meter_type', String(50))
     unit: Mapped[str] = mapped_column(String(20))
     current_value: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
 
@@ -92,9 +92,11 @@ class MaintenanceSchedule(TimestampMixin, Base):
     interval_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     interval_distance: Mapped[float | None] = mapped_column(Float, nullable=True)
     interval_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    interval_cycles: Mapped[float | None] = mapped_column(Float, nullable=True)
     due_soon_threshold_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     due_soon_threshold_distance: Mapped[float | None] = mapped_column(Float, nullable=True)
     due_soon_threshold_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    due_soon_threshold_cycles: Mapped[float | None] = mapped_column(Float, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     asset: Mapped['Asset'] = relationship(back_populates='schedules')

@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
+
+SERVICE_TRIGGER_VALUES = {'distance', 'hours', 'cycles'}
 
 
 class Token(BaseModel):
@@ -46,7 +48,15 @@ class AssetBase(BaseModel):
     year: int | None = None
     registration_or_serial: str | None = None
     notes: str | None = None
-    interval_basis: str = 'distance'
+    service_trigger: str = 'distance'
+
+    @field_validator('service_trigger')
+    @classmethod
+    def validate_service_trigger(cls, value: str) -> str:
+        normalized = (value or '').strip().lower()
+        if normalized not in SERVICE_TRIGGER_VALUES:
+            raise ValueError('Service Trigger must be Distance, Hours, or Cycles.')
+        return normalized
 
 
 class AssetCreate(AssetBase):
@@ -66,7 +76,7 @@ class AssetOut(AssetBase):
 
 
 class MeterCreate(BaseModel):
-    meter_type: str
+    service_trigger: str
     unit: str
     current_value: float | None = None
 
@@ -74,7 +84,7 @@ class MeterCreate(BaseModel):
 class MeterOut(BaseModel):
     id: int
     asset_id: int
-    meter_type: str
+    service_trigger: str
     unit: str
     current_value: float | None
 
@@ -107,10 +117,20 @@ class ScheduleCreate(BaseModel):
     interval_days: int | None = None
     interval_distance: float | None = None
     interval_hours: float | None = None
+    interval_cycles: float | None = None
     due_soon_threshold_days: int | None = None
     due_soon_threshold_distance: float | None = None
     due_soon_threshold_hours: float | None = None
+    due_soon_threshold_cycles: float | None = None
     active: bool = True
+
+    @model_validator(mode='after')
+    def validate_service_interval(self):
+        has_time = self.interval_days is not None
+        has_usage = any(value is not None for value in [self.interval_distance, self.interval_hours, self.interval_cycles])
+        if not has_time and not has_usage:
+            raise ValueError('Service interval requires time, service trigger usage, or both.')
+        return self
 
 
 class ScheduleUpdate(ScheduleCreate):
@@ -121,6 +141,7 @@ class ScheduleIntervalUpdate(BaseModel):
     interval_days: int | None = None
     interval_distance: float | None = None
     interval_hours: float | None = None
+    interval_cycles: float | None = None
 
 
 class ScheduleOut(ScheduleCreate):
@@ -191,6 +212,7 @@ class DashboardOut(BaseModel):
         id: int
         asset_id: int
         asset_name: str
+        service_trigger: str
         performed_at: datetime
         event_type: str
         notes: str | None

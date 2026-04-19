@@ -7,6 +7,13 @@ function formatValue(value) {
   return Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 })
 }
 
+function usageUnit(serviceTrigger) {
+  if (serviceTrigger === 'distance') return 'km'
+  if (serviceTrigger === 'hours') return 'h'
+  if (serviceTrigger === 'cycles') return 'cycles'
+  return ''
+}
+
 export function DashboardPage() {
   const [data, setData] = useState({ due_soon: [], overdue: [], recent_events: [] })
   const [upcomingWindowDays, setUpcomingWindowDays] = useState(14)
@@ -53,7 +60,7 @@ export function DashboardPage() {
               </Link>
               {' · '}
               {new Date(event.performed_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
-              {event.completion_meter_value !== null ? ` @ ${formatValue(event.completion_meter_value)} km` : ''}
+              {event.completion_meter_value !== null ? ` @ ${formatValue(event.completion_meter_value)} ${usageUnit(event.service_trigger)}` : ''}
             </p>
             <div className="badges">
               {event.event_type.split(',').map((task) => {

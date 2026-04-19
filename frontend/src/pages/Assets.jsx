@@ -2,26 +2,26 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../api/client'
 
-const INTERVAL_BASIS_OPTIONS = [
+const SERVICE_TRIGGER_OPTIONS = [
   { value: 'distance', label: 'Distance' },
   { value: 'hours', label: 'Hours' },
   { value: 'cycles', label: 'Cycles' },
 ]
 
-const METER_TYPE_LABELS = {
+const SERVICE_TRIGGER_LABELS = {
   distance: 'Distance',
   hours: 'Hours',
   cycles: 'Cycles',
 }
 
-function usageLabel(intervalBasis) {
-  return METER_TYPE_LABELS[intervalBasis] || intervalBasis || 'Usage'
+function usageLabel(serviceTrigger) {
+  return SERVICE_TRIGGER_LABELS[serviceTrigger] || serviceTrigger || 'Usage'
 }
 
-function usageUnit(intervalBasis) {
-  if (intervalBasis === 'distance') return 'km'
-  if (intervalBasis === 'hours') return 'h'
-  if (intervalBasis === 'cycles') return 'cycles'
+function usageUnit(serviceTrigger) {
+  if (serviceTrigger === 'distance') return 'km'
+  if (serviceTrigger === 'hours') return 'h'
+  if (serviceTrigger === 'cycles') return 'cycles'
   return ''
 }
 
@@ -182,7 +182,7 @@ export function AssetFormPage() {
     year: '',
     registration_or_serial: '',
     notes: '',
-    interval_basis: 'distance',
+    service_trigger: 'distance',
   })
 
   const canSubmitAsset = useMemo(() => form.name.trim() && form.asset_type, [form])
@@ -262,14 +262,14 @@ export function AssetFormPage() {
         <fieldset>
           <legend>Service Trigger</legend>
           <p className="hint">Choose what usage this asset accumulates for usage-based maintenance.</p>
-          {INTERVAL_BASIS_OPTIONS.map((option) => (
+          {SERVICE_TRIGGER_OPTIONS.map((option) => (
             <label key={option.value} className="radio-label">
               <input
                 type="radio"
-                name="interval_basis"
+                name="service_trigger"
                 value={option.value}
-                checked={form.interval_basis === option.value}
-                onChange={e => setForm({ ...form, interval_basis: e.target.value })}
+                checked={form.service_trigger === option.value}
+                onChange={e => setForm({ ...form, service_trigger: e.target.value })}
               />
               {option.label}
             </label>
@@ -310,7 +310,7 @@ export function AssetEditPage() {
     year: '',
     registration_or_serial: '',
     notes: '',
-    interval_basis: 'distance',
+    service_trigger: 'distance',
   })
 
   useEffect(() => {
@@ -323,7 +323,7 @@ export function AssetEditPage() {
         year: asset.year ?? '',
         registration_or_serial: asset.registration_or_serial || '',
         notes: asset.notes || '',
-        interval_basis: asset.interval_basis || 'distance',
+        service_trigger: asset.service_trigger || 'distance',
       }))
       .catch((err) => setError(err.message || 'Unable to load asset'))
   }, [id])
@@ -367,14 +367,14 @@ export function AssetEditPage() {
 
       <fieldset>
         <legend>Service Trigger</legend>
-        {INTERVAL_BASIS_OPTIONS.map((option) => (
+        {SERVICE_TRIGGER_OPTIONS.map((option) => (
           <label key={option.value} className="radio-label">
             <input
               type="radio"
-              name="edit_interval_basis"
+              name="edit_service_trigger"
               value={option.value}
-              checked={form.interval_basis === option.value}
-              onChange={e => setForm({ ...form, interval_basis: e.target.value })}
+              checked={form.service_trigger === option.value}
+              onChange={e => setForm({ ...form, service_trigger: e.target.value })}
             />
             {option.label}
           </label>
@@ -413,9 +413,9 @@ export function AssetDetailPage() {
 
   useEffect(() => { refresh() }, [id])
   const latestReading = readings[0]
-  const compatibleMeters = useMemo(() => meters.filter((meter) => meter.meter_type === asset?.interval_basis), [meters, asset])
+  const compatibleMeters = useMemo(() => meters.filter((meter) => meter.service_trigger === asset?.service_trigger), [meters, asset])
   const latestReadingMeter = meters.find((meter) => meter.id === latestReading?.meter_id)
-  const usageTypeLabel = usageLabel(asset?.interval_basis)
+  const usageTypeLabel = usageLabel(asset?.service_trigger)
 
   if (!asset) return <p>Loading...</p>
   return (
@@ -436,14 +436,14 @@ export function AssetDetailPage() {
         </div>
       </section>
       <section className="card">
-        <h3>Meters</h3>
+        <h3>Current Reading</h3>
         {latestReading ? (
           <div className="meter-highlight">
-            <p><strong>{`Current ${usageLabel(asset.interval_basis)}`}:</strong> {formatIntervalValue(latestReading.reading_value)} {latestReadingMeter?.unit || usageUnit(asset.interval_basis)}</p>
+            <p><strong>{`Current ${usageLabel(asset.service_trigger)}`}:</strong> {formatIntervalValue(latestReading.reading_value)} {latestReadingMeter?.unit || usageUnit(asset.service_trigger)}</p>
             <p className="muted-text">{formatReadingDate(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>
           </div>
         ) : (
-          <p>No meter readings recorded yet.</p>
+          <p>No readings recorded yet.</p>
         )}
       </section>
       <section className="card">
@@ -454,10 +454,13 @@ export function AssetDetailPage() {
           const dueDate = schedule.interval_days ? new Date(referenceDate.getTime() + (schedule.interval_days * 24 * 60 * 60 * 1000)) : null
           const daysLeft = dueDate ? Math.ceil((dueDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null
           const status = daysLeft === null ? 'future' : (daysLeft < 0 ? 'overdue' : (daysLeft <= 14 ? 'upcoming' : 'future'))
-          const usageUnit = asset.interval_basis === 'distance' ? 'km' : asset.interval_basis
+          const usageInterval = asset.service_trigger === 'distance'
+            ? schedule.interval_distance
+            : asset.service_trigger === 'hours'
+              ? schedule.interval_hours
+              : schedule.interval_cycles
           const intervalParts = [intervalPeriodLabel(schedule.interval_days)]
-          if (schedule.interval_distance) intervalParts.push(`Every ${formatIntervalValue(schedule.interval_distance)} ${usageUnit}`)
-          if (schedule.interval_hours) intervalParts.push(`Every ${formatIntervalValue(schedule.interval_hours)} hours`)
+          if (usageInterval) intervalParts.push(`Every ${formatIntervalValue(usageInterval)} ${usageUnit(asset.service_trigger)}`)
           const intervalSummary = intervalParts.filter(Boolean).join(' | ')
           return (
             <div key={schedule.id} className="schedule-card">
@@ -473,7 +476,7 @@ export function AssetDetailPage() {
         <h3>Maintenance history</h3>
         {events.map((ev) => (
           <div key={ev.id} className="meter-highlight">
-            <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDate(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `@ ${formatIntervalValue(ev.completion_meter_value)} km` : ''}</p>
+            <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDate(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `@ ${formatIntervalValue(ev.completion_meter_value)} ${usageUnit(asset.service_trigger)}` : ''}</p>
             <div className="badges">
               {ev.event_type.split(',').map((task) => {
                 const trimmedTask = task.trim()
@@ -503,13 +506,13 @@ export function MeterReadingFormPage() {
         setMeters(meterResult)
         setReadings(readingResult)
       })
-      .catch((err) => setError(err.message || 'Unable to load meter details'))
+      .catch((err) => setError(err.message || 'Unable to load reading details'))
   }, [id])
 
-  const compatibleMeters = useMemo(() => meters.filter((meter) => meter.meter_type === asset?.interval_basis), [meters, asset])
+  const compatibleMeters = useMemo(() => meters.filter((meter) => meter.service_trigger === asset?.service_trigger), [meters, asset])
   const primaryCompatibleMeter = compatibleMeters[compatibleMeters.length - 1]
   const latestReading = readings[0]
-  const usageTypeLabel = usageLabel(asset?.interval_basis)
+  const usageTypeLabel = usageLabel(asset?.service_trigger)
 
   useEffect(() => {
     if (!primaryCompatibleMeter) {
@@ -524,15 +527,15 @@ export function MeterReadingFormPage() {
     let targetMeterId = readingForm.meter_id
     const nextReadingValue = Number(readingForm.reading_value)
     if (primaryCompatibleMeter?.current_value !== null && primaryCompatibleMeter?.current_value !== undefined && nextReadingValue < Number(primaryCompatibleMeter.current_value)) {
-      const confirmed = window.confirm('The new meter reading is lower than the current meter value. Confirm this is correct to continue.')
+      const confirmed = window.confirm('The new reading is lower than the current reading value. Confirm this is correct to continue.')
       if (!confirmed) return
     }
     if (!primaryCompatibleMeter) {
       const createdMeter = await apiFetch(`/assets/${id}/meters`, {
         method: 'POST',
         body: JSON.stringify({
-          meter_type: asset.interval_basis,
-          unit: asset.interval_basis === 'distance' ? 'km' : asset.interval_basis,
+          service_trigger: asset.service_trigger,
+          unit: usageUnit(asset.service_trigger),
           current_value: null,
         }),
       })
@@ -554,21 +557,21 @@ export function MeterReadingFormPage() {
       <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: `Update Asset ${usageTypeLabel}` }]} />
       <h2>{`Update Asset ${usageTypeLabel}`}</h2>
       {error && <p className="error">{error}</p>}
-      {asset && <p className="hint">{`Service Trigger: ${usageLabel(asset.interval_basis)} (${usageUnit(asset.interval_basis)})`}</p>}
+      {asset && <p className="hint">{`Service Trigger: ${usageLabel(asset.service_trigger)} (${usageUnit(asset.service_trigger)})`}</p>}
 
       {primaryCompatibleMeter && (
         <>
           <label htmlFor="reading-meter">Service Trigger Reading Source</label>
-          <input id="reading-meter" value={`${METER_TYPE_LABELS[primaryCompatibleMeter.meter_type] || primaryCompatibleMeter.meter_type} (${primaryCompatibleMeter.unit})`} disabled />
+          <input id="reading-meter" value={`${SERVICE_TRIGGER_LABELS[primaryCompatibleMeter.service_trigger] || primaryCompatibleMeter.service_trigger} (${primaryCompatibleMeter.unit})`} disabled />
         </>
       )}
 
       {latestReading && <p className="muted-text">Last recorded {formatReadingDateTime(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>}
       {primaryCompatibleMeter?.current_value !== null && primaryCompatibleMeter?.current_value !== undefined && (
-        <p className="muted-text">{`Current ${usageLabel(asset?.interval_basis)}: ${formatIntervalValue(primaryCompatibleMeter.current_value)} ${usageUnit(asset?.interval_basis)}`}</p>
+        <p className="muted-text">{`Current ${usageLabel(asset?.service_trigger)}: ${formatIntervalValue(primaryCompatibleMeter.current_value)} ${usageUnit(asset?.service_trigger)}`}</p>
       )}
 
-      <label htmlFor="reading-value">{`New ${usageLabel(asset?.interval_basis)} Reading`}</label>
+      <label htmlFor="reading-value">{`New ${usageLabel(asset?.service_trigger)} Reading`}</label>
       <input id="reading-value" required inputMode="decimal" value={readingForm.reading_value} onChange={(e) => setReadingForm({ ...readingForm, reading_value: e.target.value })} />
 
       <div className="actions">
@@ -703,7 +706,7 @@ export function MaintenanceEventFormPage() {
         {taskSuggestions.map((task) => <option key={task} value={task} />)}
       </datalist>
       <p className="hint">Type a task and press comma to add it. Click a badge to remove it.</p>
-      <label htmlFor="completion-meter">{`Current ${usageLabel(asset?.interval_basis)}`}</label>
+      <label htmlFor="completion-meter">{`Current ${usageLabel(asset?.service_trigger)}`}</label>
       <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
       {activeMeter?.current_value !== null && activeMeter?.current_value !== undefined && (
         <p className="hint">Current recorded value: {formatIntervalValue(activeMeter.current_value)} {activeMeter.unit}</p>
@@ -753,9 +756,11 @@ export function ScheduleFormPage() {
       return
     }
 
-    const usagePayload = asset?.interval_basis === 'hours'
-      ? { interval_hours: usageIntervalValue, interval_distance: null }
-      : { interval_distance: usageIntervalValue, interval_hours: null }
+    const usagePayload = asset?.service_trigger === 'hours'
+      ? { interval_hours: usageIntervalValue, interval_distance: null, interval_cycles: null }
+      : asset?.service_trigger === 'cycles'
+        ? { interval_cycles: usageIntervalValue, interval_distance: null, interval_hours: null }
+        : { interval_distance: usageIntervalValue, interval_hours: null, interval_cycles: null }
 
     await apiFetch(`/assets/${id}/schedules`, {
       method: 'POST',
@@ -771,8 +776,8 @@ export function ScheduleFormPage() {
 
   return (
     <form onSubmit={submit} className="card narrow-card">
-      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Add scheduled maintenance activity' }]} />
-      <h2>Add scheduled maintenance activity</h2>
+      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Add Scheduled Maintenance Task' }]} />
+      <h2>Add Scheduled Maintenance Task</h2>
       {asset && <p className="hint">Configure a service interval for one maintenance task on <strong>{asset.name}</strong>.</p>}
       {error && <p className="error">{error}</p>}
 
@@ -793,12 +798,12 @@ export function ScheduleFormPage() {
         {TIME_INTERVAL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
 
-      <label htmlFor="schedule-usage-interval">{`Service Interval - Usage-based maintenance (optional, ${usageLabel(asset?.interval_basis)} in ${usageUnit(asset?.interval_basis)})`}</label>
+      <label htmlFor="schedule-usage-interval">{`Service Interval - Usage-based maintenance (optional, ${usageLabel(asset?.service_trigger)} in ${usageUnit(asset?.service_trigger)})`}</label>
       <input id="schedule-usage-interval" inputMode="decimal" value={form.usage_interval} onChange={(e) => setForm({ ...form, usage_interval: e.target.value })} />
       <p className="hint">Set time, service trigger usage, or both (whichever comes first).</p>
 
       <div className="actions">
-        <button className="btn btn-primary" type="submit">Save schedule</button>
+        <button className="btn btn-primary" type="submit">Save service interval</button>
         <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
@@ -808,22 +813,28 @@ export function ScheduleFormPage() {
 export function ScheduleEditPage() {
   const { id, scheduleId } = useParams()
   const navigate = useNavigate()
-  const [form, setForm] = useState({ title: '', description: '', interval_days: '', interval_distance: '', interval_hours: '' })
+  const [asset, setAsset] = useState(null)
+  const [form, setForm] = useState({ title: '', description: '', interval_days: '', usage_interval: '' })
   const [schedule, setSchedule] = useState(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    apiFetch(`/assets/${id}/schedules`)
-      .then((schedules) => {
+    Promise.all([apiFetch(`/assets/${id}`), apiFetch(`/assets/${id}/schedules`)])
+      .then(([assetResult, schedules]) => {
+        setAsset(assetResult)
         const found = schedules.find((candidate) => String(candidate.id) === String(scheduleId))
         if (!found) throw new Error('Schedule not found')
         setSchedule(found)
+        const usageInterval = assetResult.service_trigger === 'distance'
+          ? found.interval_distance
+          : assetResult.service_trigger === 'hours'
+            ? found.interval_hours
+            : found.interval_cycles
         setForm({
           title: found.title,
           description: found.description || '',
           interval_days: found.interval_days ?? '',
-          interval_distance: found.interval_distance ?? '',
-          interval_hours: found.interval_hours ?? '',
+          usage_interval: usageInterval ?? '',
         })
       })
       .catch((err) => setError(err.message || 'Unable to load schedule'))
@@ -832,14 +843,23 @@ export function ScheduleEditPage() {
   async function submit(e) {
     e.preventDefault()
     if (!schedule) return
+    const usageIntervalValue = form.usage_interval ? Number(form.usage_interval) : null
+    if (!form.interval_days && usageIntervalValue === null) {
+      setError('A service interval is required: time-based, usage-based, or both.')
+      return
+    }
+    const usagePayload = asset?.service_trigger === 'hours'
+      ? { interval_hours: usageIntervalValue, interval_distance: null, interval_cycles: null }
+      : asset?.service_trigger === 'cycles'
+        ? { interval_cycles: usageIntervalValue, interval_distance: null, interval_hours: null }
+        : { interval_distance: usageIntervalValue, interval_hours: null, interval_cycles: null }
     await apiFetch(`/schedules/${schedule.id}`, {
       method: 'PUT',
       body: JSON.stringify({
         ...schedule,
         ...form,
         interval_days: form.interval_days ? Number(form.interval_days) : null,
-        interval_distance: form.interval_distance ? Number(form.interval_distance) : null,
-        interval_hours: form.interval_hours ? Number(form.interval_hours) : null,
+        ...usagePayload,
       }),
     })
     navigate(`/assets/${id}`)
@@ -847,19 +867,17 @@ export function ScheduleEditPage() {
 
   return (
     <form onSubmit={submit} className="card narrow-card">
-      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: 'Edit scheduled task' }]} />
-      <h2>Edit scheduled maintenance task</h2>
+      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: 'Edit Service Interval' }]} />
+      <h2>Edit Scheduled Maintenance Task</h2>
       {error && <p className="error">{error}</p>}
       <label htmlFor="edit-schedule-title">Maintenance Task</label>
       <input id="edit-schedule-title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       <label htmlFor="edit-schedule-description">Description</label>
       <textarea id="edit-schedule-description" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-      <label htmlFor="edit-schedule-days">Interval (days)</label>
+      <label htmlFor="edit-schedule-days">Service Interval - Time (days)</label>
       <input id="edit-schedule-days" inputMode="numeric" value={form.interval_days} onChange={(e) => setForm({ ...form, interval_days: e.target.value })} />
-      <label htmlFor="edit-schedule-usage">Interval (usage)</label>
-      <input id="edit-schedule-usage" inputMode="decimal" value={form.interval_distance} onChange={(e) => setForm({ ...form, interval_distance: e.target.value })} />
-      <label htmlFor="edit-schedule-hours">Interval (hours)</label>
-      <input id="edit-schedule-hours" inputMode="decimal" value={form.interval_hours} onChange={(e) => setForm({ ...form, interval_hours: e.target.value })} />
+      <label htmlFor="edit-schedule-usage">{`Service Interval - ${usageLabel(asset?.service_trigger)} (${usageUnit(asset?.service_trigger)})`}</label>
+      <input id="edit-schedule-usage" inputMode="decimal" value={form.usage_interval} onChange={(e) => setForm({ ...form, usage_interval: e.target.value })} />
       <div className="actions">
         <button className="btn btn-primary" type="submit">Save changes</button>
         <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
