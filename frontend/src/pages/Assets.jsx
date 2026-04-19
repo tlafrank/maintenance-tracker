@@ -14,6 +14,10 @@ const METER_TYPE_LABELS = {
   cycles: 'Cycles',
 }
 
+function usageLabel(intervalBasis) {
+  return METER_TYPE_LABELS[intervalBasis] || intervalBasis || 'Usage'
+}
+
 const TIME_INTERVAL_OPTIONS = [
   { value: 'weekly', label: 'Weekly', days: 7 },
   { value: 'fortnightly', label: 'Fortnightly', days: 14 },
@@ -268,6 +272,100 @@ export function AssetFormPage() {
   )
 }
 
+export function AssetEditPage() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    name: '',
+    asset_type: '',
+    manufacturer: '',
+    model: '',
+    year: '',
+    registration_or_serial: '',
+    notes: '',
+    interval_basis: 'distance',
+  })
+
+  useEffect(() => {
+    apiFetch(`/assets/${id}`)
+      .then((asset) => setForm({
+        name: asset.name || '',
+        asset_type: asset.asset_type || '',
+        manufacturer: asset.manufacturer || '',
+        model: asset.model || '',
+        year: asset.year ?? '',
+        registration_or_serial: asset.registration_or_serial || '',
+        notes: asset.notes || '',
+        interval_basis: asset.interval_basis || 'distance',
+      }))
+      .catch((err) => setError(err.message || 'Unable to load asset'))
+  }, [id])
+
+  async function submit(e) {
+    e.preventDefault()
+    setError('')
+    await apiFetch(`/assets/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...form,
+        year: form.year ? Number(form.year) : null,
+      }),
+    })
+    navigate(`/assets/${id}`)
+  }
+
+  return (
+    <form onSubmit={submit} className="card narrow-card">
+      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: form.name || 'Asset', to: `/assets/${id}` }, { label: 'Edit Asset' }]} />
+      <h2>Edit Asset</h2>
+      {error && <p className="error">{error}</p>}
+
+      <label htmlFor="edit-asset-name">Asset Name</label>
+      <input id="edit-asset-name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+
+      <label htmlFor="edit-asset-type">Asset Type</label>
+      <input id="edit-asset-type" required value={form.asset_type} onChange={e => setForm({ ...form, asset_type: e.target.value })} />
+
+      <label htmlFor="edit-asset-manufacturer">Manufacturer</label>
+      <input id="edit-asset-manufacturer" value={form.manufacturer} onChange={e => setForm({ ...form, manufacturer: e.target.value })} />
+
+      <label htmlFor="edit-asset-model">Model</label>
+      <input id="edit-asset-model" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} />
+
+      <label htmlFor="edit-asset-year">Year</label>
+      <input id="edit-asset-year" value={form.year} onChange={e => setForm({ ...form, year: e.target.value })} inputMode="numeric" />
+
+      <label htmlFor="edit-asset-registration">Registration / Serial Number</label>
+      <input id="edit-asset-registration" value={form.registration_or_serial} onChange={e => setForm({ ...form, registration_or_serial: e.target.value })} />
+
+      <fieldset>
+        <legend>Usage Interval Basis</legend>
+        {INTERVAL_BASIS_OPTIONS.map((option) => (
+          <label key={option.value} className="radio-label">
+            <input
+              type="radio"
+              name="edit_interval_basis"
+              value={option.value}
+              checked={form.interval_basis === option.value}
+              onChange={e => setForm({ ...form, interval_basis: e.target.value })}
+            />
+            {option.label}
+          </label>
+        ))}
+      </fieldset>
+
+      <label htmlFor="edit-asset-notes">Notes</label>
+      <textarea id="edit-asset-notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={5} />
+
+      <div className="actions">
+        <button className="btn btn-primary" type="submit">Save changes</button>
+        <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
+      </div>
+    </form>
+  )
+}
+
 export function AssetDetailPage() {
   const { id } = useParams()
   const [asset, setAsset] = useState(null)
@@ -290,8 +388,8 @@ export function AssetDetailPage() {
   useEffect(() => { refresh() }, [id])
   const latestReading = readings[0]
   const compatibleMeters = useMemo(() => meters.filter((meter) => meter.meter_type === asset?.interval_basis), [meters, asset])
-  const primaryCompatibleMeter = compatibleMeters[compatibleMeters.length - 1]
   const latestReadingMeter = meters.find((meter) => meter.id === latestReading?.meter_id)
+  const usageTypeLabel = usageLabel(asset?.interval_basis)
 
   if (!asset) return <p>Loading...</p>
   return (
@@ -306,14 +404,14 @@ export function AssetDetailPage() {
         <h3>Maintenance actions</h3>
         <p className="hint">Use actions below to record work and manage maintenance schedules.</p>
         <div className="actions">
-          <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/readings/new`}>Add meter reading</Link>
-          <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/schedules/new`}>Add scheduled maintenance activity</Link>
-          <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/maintenance-events/new`}>Register maintenance activity</Link>
+          <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/edit`}>Edit Asset</Link>
+          <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/readings/new`}>{`Update Asset ${usageTypeLabel}`}</Link>
+          <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/schedules/new`}>Add Scheduled Maintenance Task</Link>
+          <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/maintenance-events/new`}>Record Maintenance Activity</Link>
         </div>
       </section>
       <section className="card">
         <h3>Meters</h3>
-        <p className="hint">Tracking basis: <strong>{METER_TYPE_LABELS[asset.interval_basis] || asset.interval_basis}</strong>.</p>
         {latestReading ? (
           <div className="meter-highlight">
             <p><strong>Last reading:</strong> {latestReading.reading_value} {latestReadingMeter?.unit || ''}</p>
@@ -386,6 +484,7 @@ export function MeterReadingFormPage() {
   const compatibleMeters = useMemo(() => meters.filter((meter) => meter.meter_type === asset?.interval_basis), [meters, asset])
   const primaryCompatibleMeter = compatibleMeters[compatibleMeters.length - 1]
   const latestReading = readings[0]
+  const usageTypeLabel = usageLabel(asset?.interval_basis)
 
   useEffect(() => {
     if (!primaryCompatibleMeter) {
@@ -427,8 +526,8 @@ export function MeterReadingFormPage() {
 
   return (
     <form onSubmit={submitReading} className="card narrow-card">
-      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Add meter reading' }]} />
-      <h2>Add meter reading</h2>
+      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: `Update Asset ${usageTypeLabel}` }]} />
+      <h2>{`Update Asset ${usageTypeLabel}`}</h2>
       {error && <p className="error">{error}</p>}
       {asset && <p className="hint">Readings are tracked as {METER_TYPE_LABELS[asset.interval_basis] || asset.interval_basis} for this asset.</p>}
 
@@ -449,7 +548,7 @@ export function MeterReadingFormPage() {
 
       <div className="actions">
         <button className="btn btn-primary" type="submit">Save reading</button>
-        <Link to={`/assets/${id}`}>Cancel</Link>
+        <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
   )
@@ -495,11 +594,25 @@ export function MaintenanceEventFormPage() {
     setTaskInput('')
   }
 
+  function tasksWithPendingInput() {
+    const pendingTask = taskInput.trim()
+    if (!pendingTask) return tasks
+    if (tasks.some((task) => task.toLowerCase() === pendingTask.toLowerCase())) return tasks
+    return [...tasks, pendingTask]
+  }
+
   async function submit(e) {
     e.preventDefault()
     setError('')
+    const mergedTasks = tasksWithPendingInput()
+    if (mergedTasks.length === 0) {
+      setError('Add at least one maintenance task.')
+      return
+    }
+    setTasks(mergedTasks)
+    setTaskInput('')
     const payload = {
-      event_type: tasks.join(', '),
+      event_type: mergedTasks.join(', '),
       notes: null,
       completion_meter_value: form.completion_meter_value ? Number(form.completion_meter_value) : null,
     }
@@ -514,24 +627,30 @@ export function MaintenanceEventFormPage() {
 
   return (
     <form onSubmit={submit} className="card narrow-card">
-      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Register maintenance activity' }]} />
-      <h2>Register maintenance activity</h2>
+      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Record Maintenance Activity' }]} />
+      <h2>Record Maintenance Activity</h2>
       {asset && <p className="hint">Capture completed work for <strong>{asset.name}</strong>.</p>}
       {error && <p className="error">{error}</p>}
 
       <label htmlFor="task-input">Maintenance Tasks</label>
-      <input
-        id="task-input"
-        list="task-options"
-        value={taskInput}
-        onChange={(e) => setTaskInput(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === ',') {
-            e.preventDefault()
-            addTask(taskInput)
-          }
-        }}
-      />
+      <div className="input-group">
+        <input
+          className="form-control"
+          id="task-input"
+          list="task-options"
+          value={taskInput}
+          onChange={(e) => setTaskInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === ',') {
+              e.preventDefault()
+              addTask(taskInput)
+            }
+          }}
+        />
+        <button type="button" className="btn btn-outline-primary" onClick={() => addTask(taskInput)}>
+          Add Task
+        </button>
+      </div>
       <datalist id="task-options">
         {taskSuggestions.map((task) => <option key={task} value={task} />)}
       </datalist>
@@ -551,12 +670,12 @@ export function MaintenanceEventFormPage() {
       </div>
       <p className="hint">Type a task and press comma to add it. Click a badge to remove it.</p>
 
-      <label htmlFor="completion-meter">Meter at Completion</label>
+      <label htmlFor="completion-meter">{`Asset ${usageLabel(asset?.interval_basis)} at Completion`}</label>
       <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
 
       <div className="actions">
-        <button className="btn btn-primary" type="submit" disabled={tasks.length === 0}>{editEventId ? 'Update activity' : 'Record activity'}</button>
-        <Link to={`/assets/${id}`}>Cancel</Link>
+        <button className="btn btn-primary" type="submit" disabled={tasks.length === 0 && !taskInput.trim()}>{editEventId ? 'Update Activity' : 'Record Maintenance Activity'}</button>
+        <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
   )
@@ -641,7 +760,7 @@ export function ScheduleFormPage() {
 
       <div className="actions">
         <button className="btn btn-primary" type="submit">Save schedule</button>
-        <Link to={`/assets/${id}`}>Cancel</Link>
+        <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
   )
@@ -704,7 +823,7 @@ export function ScheduleEditPage() {
       <input id="edit-schedule-hours" inputMode="decimal" value={form.interval_hours} onChange={(e) => setForm({ ...form, interval_hours: e.target.value })} />
       <div className="actions">
         <button className="btn btn-primary" type="submit">Save changes</button>
-        <Link to={`/assets/${id}`}>Cancel</Link>
+        <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
   )

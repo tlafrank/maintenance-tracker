@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { apiFetch } from './api/client'
 import {
   AssetDetailPage,
+  AssetEditPage,
   AssetFormPage,
   AssetListPage,
   MaintenanceEventFormPage,
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="/assets" element={<ProtectedRoute><AssetListPage /></ProtectedRoute>} />
         <Route path="/assets/new" element={<ProtectedRoute><AssetFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id" element={<ProtectedRoute><AssetDetailPage /></ProtectedRoute>} />
+        <Route path="/assets/:id/edit" element={<ProtectedRoute><AssetEditPage /></ProtectedRoute>} />
         <Route path="/assets/:id/readings/new" element={<ProtectedRoute><MeterReadingFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id/maintenance-events/new" element={<ProtectedRoute><MaintenanceEventFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id/schedules/new" element={<ProtectedRoute><ScheduleFormPage /></ProtectedRoute>} />

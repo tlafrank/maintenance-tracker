@@ -62,7 +62,7 @@ export function ProfilePage() {
 
       <div className="actions">
         <button className="btn btn-primary" type="submit">Save profile</button>
-        <Link to="/dashboard">Cancel</Link>
+        <Link className="btn btn-outline-secondary" to="/dashboard">Cancel</Link>
       </div>
     </form>
   )
