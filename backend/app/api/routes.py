@@ -164,9 +164,36 @@ def _owned_asset(asset_id: int, user_id: int, db: Session) -> Asset:
     return asset
 
 
-def _validate_service_interval(interval_days: int | None, interval_distance: float | None, interval_hours: float | None):
-    if interval_days is None and interval_distance is None and interval_hours is None:
+def _validate_service_interval(interval_days: int | None, usage_interval: float | None):
+    if interval_days is None and usage_interval is None:
         raise HTTPException(status_code=400, detail='Service interval requires time, service trigger usage, or both.')
+
+
+def _usage_interval_for_trigger(asset: Asset, payload: ScheduleCreate | ScheduleUpdate | ScheduleIntervalUpdate) -> float | None:
+    if asset.service_trigger == 'distance':
+        return payload.interval_distance
+    if asset.service_trigger == 'hours':
+        return payload.interval_hours
+    if asset.service_trigger == 'cycles':
+        return payload.interval_cycles
+    return None
+
+
+def _normalize_usage_intervals(asset: Asset, payload: dict) -> dict:
+    payload['interval_distance'] = payload.get('interval_distance') if asset.service_trigger == 'distance' else None
+    payload['interval_hours'] = payload.get('interval_hours') if asset.service_trigger == 'hours' else None
+    payload['interval_cycles'] = payload.get('interval_cycles') if asset.service_trigger == 'cycles' else None
+    return payload
+
+
+def _unit_for_trigger(service_trigger: str, preferred_distance_unit: str = 'km') -> str:
+    if service_trigger == 'distance':
+        return preferred_distance_unit or 'km'
+    if service_trigger == 'hours':
+        return 'h'
+    if service_trigger == 'cycles':
+        return 'cycles'
+    return ''
 
 
 @router.get('/assets/{asset_id}', response_model=AssetOut)
@@ -198,13 +225,15 @@ def archive_asset(asset_id: int, current_user: User = Depends(get_current_user),
 @router.post('/assets/{asset_id}/meters', response_model=MeterOut)
 def create_meter(asset_id: int, payload: MeterCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     asset = _owned_asset(asset_id, current_user.id, db)
+    if payload.service_trigger != asset.service_trigger:
+        raise HTTPException(status_code=400, detail='Reading source must use the asset Service Trigger.')
     existing_meter = db.scalar(
         select(Meter)
         .where(Meter.asset_id == asset_id)
         .order_by(desc(Meter.id))
     )
     if existing_meter:
-        existing_meter.meter_type = asset.interval_basis
+        existing_meter.service_trigger = asset.service_trigger
         existing_meter.unit = payload.unit
         existing_meter.current_value = payload.current_value
         db.commit()
@@ -213,7 +242,7 @@ def create_meter(asset_id: int, payload: MeterCreate, current_user: User = Depen
 
     meter = Meter(
         asset_id=asset_id,
-        meter_type=asset.interval_basis,
+        service_trigger=asset.service_trigger,
         unit=payload.unit,
         current_value=payload.current_value,
     )
@@ -239,8 +268,8 @@ def create_reading(asset_id: int, payload: MeterReadingCreate, current_user: Use
     if not meter:
         meter = Meter(
             asset_id=asset_id,
-            meter_type=asset.interval_basis,
-            unit='km' if asset.interval_basis == 'distance' else asset.interval_basis,
+            service_trigger=asset.service_trigger,
+            unit=_unit_for_trigger(asset.service_trigger),
             current_value=payload.reading_value,
         )
         db.add(meter)
@@ -275,9 +304,11 @@ def list_schedules(asset_id: int, current_user: User = Depends(get_current_user)
 
 @router.post('/assets/{asset_id}/schedules', response_model=ScheduleOut)
 def create_schedule(asset_id: int, payload: ScheduleCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _owned_asset(asset_id, current_user.id, db)
-    _validate_service_interval(payload.interval_days, payload.interval_distance, payload.interval_hours)
-    schedule = MaintenanceSchedule(asset_id=asset_id, **payload.model_dump())
+    asset = _owned_asset(asset_id, current_user.id, db)
+    usage_interval = _usage_interval_for_trigger(asset, payload)
+    _validate_service_interval(payload.interval_days, usage_interval)
+    schedule_payload = _normalize_usage_intervals(asset, payload.model_dump())
+    schedule = MaintenanceSchedule(asset_id=asset_id, **schedule_payload)
     db.add(schedule)
     db.commit()
     db.refresh(schedule)
@@ -289,9 +320,11 @@ def update_schedule(schedule_id: int, payload: ScheduleUpdate, current_user: Use
     schedule = db.get(MaintenanceSchedule, schedule_id)
     if not schedule:
         raise HTTPException(status_code=404, detail='Schedule not found')
-    _owned_asset(schedule.asset_id, current_user.id, db)
-    _validate_service_interval(payload.interval_days, payload.interval_distance, payload.interval_hours)
-    for key, value in payload.model_dump().items():
+    asset = _owned_asset(schedule.asset_id, current_user.id, db)
+    usage_interval = _usage_interval_for_trigger(asset, payload)
+    _validate_service_interval(payload.interval_days, usage_interval)
+    normalized_payload = _normalize_usage_intervals(asset, payload.model_dump())
+    for key, value in normalized_payload.items():
         setattr(schedule, key, value)
     db.commit()
     db.refresh(schedule)
@@ -303,12 +336,15 @@ def update_schedule_intervals(schedule_id: int, payload: ScheduleIntervalUpdate,
     schedule = db.get(MaintenanceSchedule, schedule_id)
     if not schedule:
         raise HTTPException(status_code=404, detail='Schedule not found')
-    _owned_asset(schedule.asset_id, current_user.id, db)
-    _validate_service_interval(payload.interval_days, payload.interval_distance, payload.interval_hours)
+    asset = _owned_asset(schedule.asset_id, current_user.id, db)
+    usage_interval = _usage_interval_for_trigger(asset, payload)
+    _validate_service_interval(payload.interval_days, usage_interval)
+    normalized_payload = _normalize_usage_intervals(asset, payload.model_dump())
 
-    schedule.interval_days = payload.interval_days
-    schedule.interval_distance = payload.interval_distance
-    schedule.interval_hours = payload.interval_hours
+    schedule.interval_days = normalized_payload['interval_days']
+    schedule.interval_distance = normalized_payload['interval_distance']
+    schedule.interval_hours = normalized_payload['interval_hours']
+    schedule.interval_cycles = normalized_payload['interval_cycles']
     db.commit()
     db.refresh(schedule)
     return schedule
@@ -353,8 +389,8 @@ def create_event(asset_id: int, payload: MaintenanceEventCreate, current_user: U
         if not meter:
             meter = Meter(
                 asset_id=asset_id,
-                meter_type=asset.interval_basis,
-                unit=current_user.preferred_distance_unit if asset.interval_basis == 'distance' else asset.interval_basis,
+                service_trigger=asset.service_trigger,
+                unit=_unit_for_trigger(asset.service_trigger, current_user.preferred_distance_unit),
                 current_value=payload.completion_meter_value,
             )
             db.add(meter)
@@ -389,8 +425,8 @@ def update_event(event_id: int, payload: MaintenanceEventCreate, current_user: U
         if not meter:
             meter = Meter(
                 asset_id=asset.id,
-                meter_type=asset.interval_basis,
-                unit=current_user.preferred_distance_unit if asset.interval_basis == 'distance' else asset.interval_basis,
+                service_trigger=asset.service_trigger,
+                unit=_unit_for_trigger(asset.service_trigger, current_user.preferred_distance_unit),
                 current_value=payload.completion_meter_value,
             )
             db.add(meter)
@@ -583,7 +619,7 @@ def dashboard(current_user: User = Depends(get_current_user), db: Session = Depe
                 due_soon.append(item)
 
     recent_events = db.execute(
-        select(MaintenanceEvent, Asset.name)
+        select(MaintenanceEvent, Asset.name, Asset.service_trigger)
         .join(Asset, Asset.id == MaintenanceEvent.asset_id)
         .where(Asset.owner_user_id == current_user.id)
         .order_by(desc(MaintenanceEvent.performed_at))
@@ -594,12 +630,13 @@ def dashboard(current_user: User = Depends(get_current_user), db: Session = Depe
             id=event.id,
             asset_id=event.asset_id,
             asset_name=asset_name,
+            service_trigger=service_trigger,
             performed_at=event.performed_at,
             event_type=event.event_type,
             notes=event.notes,
             completion_meter_value=event.completion_meter_value,
         )
-        for event, asset_name in recent_events
+        for event, asset_name, service_trigger in recent_events
     ]
     return DashboardOut(due_soon=due_soon, overdue=overdue, recent_events=recent_items)
 

@@ -246,9 +246,9 @@ The backend now hashes passwords with `pbkdf2_sha256` (via Passlib), avoiding bc
 - User authentication
 - CRUD for assets
 - Per-user ownership and access controls
-- Meter tracking (distance, hours, date-only assets)
-- Maintenance schedules (date/distance/hour or combinations)
-- Due soon and overdue dashboard visibility
+- Reading tracking (Distance, Hours, Cycles)
+- Service intervals (time-based, usage-based, or both)
+- Due soon and overdue dashboard visibility (whichever interval basis is met first)
 - Maintenance event logging with notes
 - API-first implementation
 

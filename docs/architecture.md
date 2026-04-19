@@ -16,7 +16,7 @@ Assets are user-owned (`assets.owner_user_id`) and every asset-related endpoint 
 Due state is calculated dynamically in the backend using:
 
 - latest maintenance event for the schedule
-- latest known meter values
+- latest known service-trigger reading values
 - current time
 
-The earliest due condition across date/distance/hour triggers determines the active status.
+The earliest due condition across time-based and usage-based service intervals (distance/hours/cycles) determines the active status.
