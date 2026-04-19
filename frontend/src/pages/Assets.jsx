@@ -139,10 +139,18 @@ export function AssetListPage() {
   const [assets, setAssets] = useState([])
   useEffect(() => { apiFetch('/assets').then(setAssets) }, [])
   return (
-    <div className="card">
-      <h2>Assets</h2>
-      <Link to="/assets/new">Add asset</Link>
-      {assets.map(a => <p key={a.id}><Link to={`/assets/${a.id}`}>{a.name}</Link> ({a.asset_type})</p>)}
+    <div className="grid">
+      <section className="card span-all">
+        <h2>Assets</h2>
+        <div className="equal-actions">
+          <Link className="btn btn-outline-primary equal-action-btn" to="/assets/new">Add Asset</Link>
+          <Link className="btn btn-outline-primary equal-action-btn" to="/dashboard">Back to Dashboard</Link>
+        </div>
+      </section>
+      <section className="card span-all">
+        {assets.length === 0 && <p className="muted-text">No assets yet. Use Add Asset to get started.</p>}
+        {assets.map(a => <p key={a.id}><Link to={`/assets/${a.id}`}>{a.name}</Link> ({a.asset_type})</p>)}
+      </section>
     </div>
   )
 }
@@ -401,7 +409,7 @@ export function AssetDetailPage() {
     <div className="grid">
       <section className="card span-all">
         <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset.name }]} />
-        <h2>{asset.name}</h2>
+        <h2>{asset.name} <Link className="muted-edit-link" to={`/assets/${id}/edit`}>(edit)</Link></h2>
         <p>{asset.asset_type}</p>
         {asset.notes && <p>{asset.notes}</p>}
       </section>
@@ -409,7 +417,6 @@ export function AssetDetailPage() {
         <h3>Maintenance actions</h3>
         <p className="hint">Use actions below to record work and manage maintenance schedules.</p>
         <div className="actions">
-          <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/edit`}>Edit Asset</Link>
           <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/readings/new`}>{`Update Asset ${usageTypeLabel}`}</Link>
           <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/schedules/new`}>Add Scheduled Maintenance Task</Link>
           <Link className="action-button btn btn-outline-primary" to={`/assets/${id}/maintenance-events/new`}>Record Maintenance Activity</Link>
@@ -565,18 +572,19 @@ export function MaintenanceEventFormPage() {
   const editEventId = searchParams.get('edit')
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
+  const [meters, setMeters] = useState([])
   const [form, setForm] = useState({ completion_meter_value: '', notes: '' })
   const [taskInput, setTaskInput] = useState('')
   const [tasks, setTasks] = useState([])
   const [taskSuggestions, setTaskSuggestions] = useState([])
-  const [taskRename, setTaskRename] = useState({ old_name: '', new_name: '' })
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([apiFetch(`/assets/${id}`), apiFetch('/maintenance-tasks')])
-      .then(([assetResult, suggestions]) => {
+    Promise.all([apiFetch(`/assets/${id}`), apiFetch('/maintenance-tasks'), apiFetch(`/assets/${id}/meters`)])
+      .then(([assetResult, suggestions, meterResult]) => {
         setAsset(assetResult)
         setTaskSuggestions(suggestions.map((suggestion) => suggestion.task_name))
+        setMeters(meterResult)
       })
       .catch((err) => setError(err.message || 'Unable to load asset details'))
   }, [id])
@@ -631,21 +639,7 @@ export function MaintenanceEventFormPage() {
     navigate(`/assets/${id}`)
   }
 
-  async function renameTask(e) {
-    e.preventDefault()
-    if (!taskRename.old_name.trim() || !taskRename.new_name.trim()) return
-    await apiFetch('/maintenance-tasks/rename', {
-      method: 'PUT',
-      body: JSON.stringify(taskRename),
-    })
-    setTaskSuggestions((current) => current.map((task) => (
-      task.toLowerCase() === taskRename.old_name.trim().toLowerCase() ? taskRename.new_name.trim() : task
-    )))
-    setTasks((current) => current.map((task) => (
-      task.toLowerCase() === taskRename.old_name.trim().toLowerCase() ? taskRename.new_name.trim() : task
-    )))
-    setTaskRename({ old_name: '', new_name: '' })
-  }
+  const activeMeter = meters[0]
 
   return (
     <form onSubmit={submit} className="card narrow-card">
@@ -691,17 +685,11 @@ export function MaintenanceEventFormPage() {
       <p className="hint">Type a task and press comma to add it. Click a badge to remove it.</p>
       <label htmlFor="completion-meter">{`Current Asset ${usageLabel(asset?.interval_basis)}`}</label>
       <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
+      {activeMeter?.current_value !== null && activeMeter?.current_value !== undefined && (
+        <p className="hint">Current recorded value: {formatIntervalValue(activeMeter.current_value)} {activeMeter.unit}</p>
+      )}
       <label htmlFor="maintenance-notes">Notes</label>
       <textarea id="maintenance-notes" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-
-      <fieldset>
-        <legend>Rename Existing Task</legend>
-        <label htmlFor="rename-old-task">Current task name</label>
-        <input id="rename-old-task" list="task-options" value={taskRename.old_name} onChange={(e) => setTaskRename((current) => ({ ...current, old_name: e.target.value }))} />
-        <label htmlFor="rename-new-task">New task name</label>
-        <input id="rename-new-task" value={taskRename.new_name} onChange={(e) => setTaskRename((current) => ({ ...current, new_name: e.target.value }))} />
-        <button className="btn btn-outline-primary" type="button" onClick={renameTask}>Rename Task</button>
-      </fieldset>
 
       <div className="actions">
         <button className="btn btn-primary" type="submit" disabled={tasks.length === 0 && !taskInput.trim()}>{editEventId ? 'Update Activity' : 'Record Maintenance Activity'}</button>

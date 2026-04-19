@@ -13,14 +13,19 @@ export function ProfilePage() {
   })
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [taskName, setTaskName] = useState('')
+  const [tasks, setTasks] = useState([])
+  const [editingTaskId, setEditingTaskId] = useState(null)
+  const [editingTaskName, setEditingTaskName] = useState('')
 
   useEffect(() => {
-    apiFetch('/auth/me').then((me) => {
+    Promise.all([apiFetch('/auth/me'), apiFetch('/maintenance-tasks')]).then(([me, taskList]) => {
       setForm((current) => ({
         ...current,
         display_name: me.display_name,
         preferred_distance_unit: me.preferred_distance_unit || 'km',
       }))
+      setTasks(taskList.filter((task) => task.id !== null))
     })
   }, [])
 
@@ -40,9 +45,32 @@ export function ProfilePage() {
     }
   }
 
+  async function addTask(e) {
+    e.preventDefault()
+    if (!taskName.trim()) return
+    const created = await apiFetch('/maintenance-tasks', {
+      method: 'POST',
+      body: JSON.stringify({ task_name: taskName }),
+    })
+    setTasks((current) => [...current, created].sort((a, b) => a.task_name.localeCompare(b.task_name)))
+    setTaskName('')
+  }
+
+  async function saveTask(taskId) {
+    if (!editingTaskName.trim()) return
+    const updated = await apiFetch(`/maintenance-tasks/${taskId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ task_name: editingTaskName }),
+    })
+    setTasks((current) => current.map((task) => (task.id === taskId ? updated : task)))
+    setEditingTaskId(null)
+    setEditingTaskName('')
+  }
+
   return (
-    <form onSubmit={submit} className="card narrow-card">
-      <h2>Profile</h2>
+    <div className="card narrow-card">
+      <form onSubmit={submit}>
+        <h2>Profile</h2>
       {error && <p className="error">{error}</p>}
       {message && <p>{message}</p>}
 
@@ -64,6 +92,41 @@ export function ProfilePage() {
         <button className="btn btn-primary" type="submit">Save profile</button>
         <Link className="btn btn-outline-secondary" to="/dashboard">Cancel</Link>
       </div>
-    </form>
+      </form>
+
+      <hr />
+      <h3>Maintenance Task Library</h3>
+      <p className="hint">Add or rename your reusable maintenance task names here.</p>
+      <form onSubmit={addTask}>
+        <label htmlFor="new-maintenance-task">Add maintenance task</label>
+        <div className="actions">
+          <input id="new-maintenance-task" value={taskName} onChange={(e) => setTaskName(e.target.value)} placeholder="e.g. Rotate Tyres" />
+          <button className="btn btn-outline-primary" type="submit">Add Task</button>
+        </div>
+      </form>
+      <div className="badges">
+        {tasks.map((task) => (
+          <div key={task.id} className="badge">
+            {editingTaskId === task.id ? (
+              <>
+                <input value={editingTaskName} onChange={(e) => setEditingTaskName(e.target.value)} />
+                <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => saveTask(task.id)}>Save</button>
+              </>
+            ) : (
+              <>
+                <span>{task.task_name}</span>
+                <button
+                  className="btn btn-sm btn-link"
+                  type="button"
+                  onClick={() => { setEditingTaskId(task.id); setEditingTaskName(task.task_name) }}
+                >
+                  Edit
+                </button>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }

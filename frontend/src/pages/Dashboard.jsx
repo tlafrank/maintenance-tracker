@@ -9,6 +9,7 @@ function formatValue(value) {
 
 export function DashboardPage() {
   const [data, setData] = useState({ due_soon: [], overdue: [], recent_events: [] })
+  const dueSoonWeeks = 2
 
   useEffect(() => {
     apiFetch('/dashboard').then(setData)
@@ -18,10 +19,11 @@ export function DashboardPage() {
     <div className="grid">
       <section className="card">
         <h3 className="h5">Overdue</h3>
+        {data.overdue.length === 0 && <p className="muted-text">No overdue tasks 🎉</p>}
         {data.overdue.map(i => <p key={i.schedule_id}>{i.asset_name}: {i.schedule_title}</p>)}
       </section>
       <section className="card">
-        <h3 className="h5">Due soon</h3>
+        <h3 className="h5">{`Due in the next ${dueSoonWeeks} weeks`}</h3>
         {data.due_soon.map(i => <p key={i.schedule_id}>{i.asset_name}: {i.schedule_title}</p>)}
       </section>
       <section className="card">

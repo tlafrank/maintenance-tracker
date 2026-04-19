@@ -160,12 +160,21 @@ class MaintenanceActivitySuggestion(BaseModel):
 
 
 class MaintenanceTaskSuggestion(BaseModel):
+    id: int | None = None
     task_name: str
 
 
 class MaintenanceTaskRename(BaseModel):
     old_name: str
     new_name: str
+
+
+class MaintenanceTaskCreate(BaseModel):
+    task_name: str
+
+
+class MaintenanceTaskUpdate(BaseModel):
+    task_name: str
 
 
 class DashboardItem(BaseModel):

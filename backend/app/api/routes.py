@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import get_db
-from app.models.models import Asset, AssetType, MaintenanceEvent, MaintenanceSchedule, Meter, MeterReading, User
+from app.models.models import Asset, AssetType, MaintenanceEvent, MaintenanceSchedule, MaintenanceTaskTemplate, Meter, MeterReading, User
 from app.schemas.schemas import (
     AssetCreate,
     AssetOut,
@@ -23,6 +23,8 @@ from app.schemas.schemas import (
     MaintenanceActivitySuggestion,
     MaintenanceTaskSuggestion,
     MaintenanceTaskRename,
+    MaintenanceTaskCreate,
+    MaintenanceTaskUpdate,
     MeterCreate,
     MeterOut,
     MeterReadingCreate,
@@ -409,21 +411,64 @@ def list_maintenance_activities(current_user: User = Depends(get_current_user), 
 
 @router.get('/maintenance-tasks', response_model=list[MaintenanceTaskSuggestion])
 def list_maintenance_tasks(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    templates = db.scalars(
+        select(MaintenanceTaskTemplate)
+        .where(MaintenanceTaskTemplate.owner_user_id == current_user.id)
+        .order_by(MaintenanceTaskTemplate.task_name)
+    ).all()
+    tasks: list[MaintenanceTaskSuggestion] = [
+        MaintenanceTaskSuggestion(id=template.id, task_name=template.task_name)
+        for template in templates
+    ]
+    seen: set[str] = {template.task_name.strip().lower() for template in templates}
+
     events = db.scalars(
         select(MaintenanceEvent)
         .where(MaintenanceEvent.performed_by_user_id == current_user.id)
         .order_by(desc(MaintenanceEvent.performed_at))
     ).all()
-    seen: set[str] = set()
-    tasks: list[MaintenanceTaskSuggestion] = []
     for event in events:
         for task in [part.strip() for part in event.event_type.split(',')]:
             key = task.lower()
             if not task or key in seen:
                 continue
             seen.add(key)
-            tasks.append(MaintenanceTaskSuggestion(task_name=task))
+            tasks.append(MaintenanceTaskSuggestion(id=None, task_name=task))
     return tasks
+
+
+@router.post('/maintenance-tasks', response_model=MaintenanceTaskSuggestion)
+def create_maintenance_task(payload: MaintenanceTaskCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    task_name = payload.task_name.strip()
+    if not task_name:
+        raise HTTPException(status_code=400, detail='Task name is required')
+    existing = db.scalar(
+        select(MaintenanceTaskTemplate).where(
+            MaintenanceTaskTemplate.owner_user_id == current_user.id,
+            MaintenanceTaskTemplate.task_name == task_name,
+        )
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail='Task already exists')
+    template = MaintenanceTaskTemplate(owner_user_id=current_user.id, task_name=task_name)
+    db.add(template)
+    db.commit()
+    db.refresh(template)
+    return MaintenanceTaskSuggestion(id=template.id, task_name=template.task_name)
+
+
+@router.put('/maintenance-tasks/{task_id}', response_model=MaintenanceTaskSuggestion)
+def update_maintenance_task(task_id: int, payload: MaintenanceTaskUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    template = db.get(MaintenanceTaskTemplate, task_id)
+    if not template or template.owner_user_id != current_user.id:
+        raise HTTPException(status_code=404, detail='Maintenance task not found')
+    task_name = payload.task_name.strip()
+    if not task_name:
+        raise HTTPException(status_code=400, detail='Task name is required')
+    template.task_name = task_name
+    db.commit()
+    db.refresh(template)
+    return MaintenanceTaskSuggestion(id=template.id, task_name=template.task_name)
 
 
 @router.put('/maintenance-tasks/rename')
@@ -453,6 +498,12 @@ def rename_maintenance_task(payload: MaintenanceTaskRename, current_user: User =
         if updated:
             event.event_type = ', '.join(normalized_tasks)
             updated_events += 1
+    templates = db.scalars(
+        select(MaintenanceTaskTemplate).where(MaintenanceTaskTemplate.owner_user_id == current_user.id)
+    ).all()
+    for template in templates:
+        if template.task_name.strip().lower() == old_name.lower():
+            template.task_name = new_name
 
     db.commit()
     return {'updated_events': updated_events}

@@ -15,7 +15,10 @@ fieldset { border: 1px solid #d9dfea; border-radius: .35rem; margin: .25rem 0 .9
 .muted-text { color: #667; font-size: .9rem; margin-top: -.25rem; }
 .error { color: #b00; }
 .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .75rem 0; }
+.equal-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: .5rem; }
+.equal-action-btn { flex: 1 1 220px; text-align: center; }
 .action-button { min-width: 220px; text-align: center; flex: 1 1 220px; }
+.muted-edit-link { font-size: .9rem; font-weight: normal; color: #667; }
 .badges { display: flex; flex-wrap: wrap; gap: .35rem; margin: .35rem 0 .6rem; }
 .badge { background: #e7eefc; color: #234; border: 1px solid #c7d5f7; border-radius: 999px; padding: .2rem .55rem; font-size: .85rem; display: inline-flex; align-items: center; gap: .35rem; }
 .badge-remove { border: none; background: transparent; padding: 0; font-size: .9rem; line-height: 1; }
