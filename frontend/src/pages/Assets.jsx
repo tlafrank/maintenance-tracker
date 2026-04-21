@@ -141,10 +141,20 @@ function intervalPeriodLabel(intervalDays) {
 
 function humanDueText(daysLeft) {
   if (daysLeft === null || daysLeft === undefined || Number.isNaN(daysLeft)) return 'No due date'
-  if (daysLeft === -14) return 'Two weeks past due'
-  if (daysLeft < -14) return `${Math.abs(daysLeft)} days past due`
-  if (daysLeft < -6) return 'Overdue by one week'
-  if (daysLeft < 0) return `${Math.abs(daysLeft)} days past due`
+  if (daysLeft < 0) {
+    const overdueDays = Math.abs(daysLeft)
+    if (overdueDays < 14) return `Overdue by ${overdueDays} day${overdueDays === 1 ? '' : 's'}`
+    if (overdueDays < 60) {
+      const weeks = Math.ceil(overdueDays / 7)
+      return `Overdue by ${weeks} week${weeks === 1 ? '' : 's'}`
+    }
+    if (overdueDays < 730) {
+      const months = Math.ceil(overdueDays / 30)
+      return `Overdue by ${months} month${months === 1 ? '' : 's'}`
+    }
+    const years = Math.ceil(overdueDays / 365)
+    return `Overdue by ${years} year${years === 1 ? '' : 's'}`
+  }
   if (daysLeft === 0) return 'Due today'
   if (daysLeft <= 7) return 'Due next week'
   if (daysLeft <= 30) return `Due in ${Math.ceil(daysLeft / 7)} weeks`
@@ -592,7 +602,9 @@ export function AssetDetailPage() {
           if (usageInterval) intervalParts.push(`Every ${formatIntervalValue(usageInterval)} ${usageUnit(asset.service_trigger)}`)
           const intervalSummary = intervalParts.filter(Boolean).join(' | ')
           let dueSummary = ''
-          if (daysLeft !== null && usageRemaining !== null) {
+          if (!lastMatchingEvent) {
+            dueSummary = 'Never been conducted'
+          } else if (daysLeft !== null && usageRemaining !== null) {
             dueSummary = `${humanDueText(daysLeft)} or ${usageRemainingText(usageRemaining, asset.service_trigger)}`
           } else if (daysLeft !== null) {
             dueSummary = humanDueText(daysLeft)
@@ -810,10 +822,17 @@ export function MaintenanceEventFormPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([apiFetch(`/assets/${id}`), apiFetch('/maintenance-tasks'), apiFetch(`/assets/${id}/meters`)])
-      .then(([assetResult, suggestions, meterResult]) => {
+    Promise.all([apiFetch(`/assets/${id}`), apiFetch('/maintenance-tasks'), apiFetch(`/assets/${id}/meters`), apiFetch(`/assets/${id}/maintenance-events`)])
+      .then(([assetResult, suggestions, meterResult, assetEvents]) => {
         setAsset(assetResult)
-        setTaskSuggestions(suggestions.map((suggestion) => suggestion.task_name))
+        const templateTaskNames = suggestions
+          .filter((suggestion) => suggestion.id !== null)
+          .map((suggestion) => suggestion.task_name)
+        const assetSpecificTaskNames = assetEvents
+          .flatMap((event) => event.event_type.split(',').map((task) => task.trim()))
+          .filter(Boolean)
+        const uniqueTaskNames = Array.from(new Set([...templateTaskNames, ...assetSpecificTaskNames]))
+        setTaskSuggestions(uniqueTaskNames)
         setMeters(meterResult)
       })
       .catch((err) => setError(err.message || 'Unable to load asset details'))

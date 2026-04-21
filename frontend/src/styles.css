@@ -27,8 +27,10 @@ fieldset { border: 1px solid #d9dfea; border-radius: .35rem; margin: .25rem 0 .9
 .dashboard-thumbnail-placeholder { display: flex; align-items: center; justify-content: center; font-size: .72rem; color: #667; background: #eef1f8; border: 1px dashed #c7cfdf; }
 .upcoming-list { display: flex; flex-direction: column; gap: .5rem; }
 .upcoming-item { display: flex; justify-content: space-between; align-items: center; gap: .75rem; border: 1px solid #d7dced; border-radius: .4rem; padding: .6rem .7rem; background: #fbfcff; }
+.dashboard-asset-details { display: flex; flex-direction: column; justify-content: center; }
 .dashboard-thumbnail { width: 48px; height: 48px; border-radius: .4rem; object-fit: contain; background: #f3f5fb; border: 1px solid #d7dced; margin-bottom: .25rem; }
 .dashboard-item-row { display: flex; align-items: center; gap: .6rem; }
+.dashboard-maintenance-card { background: #fbfcff; border-color: #d7dced; }
 .action-button { min-width: 220px; text-align: center; flex: 1 1 220px; }
 .muted-edit-link { font-size: .9rem; font-weight: normal; color: #667; }
 .badges { display: flex; flex-wrap: wrap; gap: .35rem; margin: .35rem 0 .6rem; }

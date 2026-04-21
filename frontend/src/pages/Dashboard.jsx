@@ -65,10 +65,12 @@ export function DashboardPage() {
         {data.overdue.length === 0 && <p className="muted-text">No overdue tasks 🎉</p>}
         {overdueByAsset.map((item) => (
           <div key={item.asset_id} className="upcoming-item">
-            <div>
+            <div className="dashboard-asset-details">
               <AssetThumbnail thumbnailPath={item.thumbnail_path} name={item.asset_name} />
-              <strong>{item.asset_name}</strong>
-              <p className="muted-text mb-0">{item.tasks.join(', ')}</p>
+              <Link to={`/assets/${item.asset_id}`}><strong>{item.asset_name}</strong></Link>
+              <div className="badges">
+                {item.tasks.map((taskName) => <span key={`${item.asset_id}-${taskName}`} className="badge">{taskName}</span>)}
+              </div>
             </div>
             <Link className="btn btn-sm btn-outline-primary" to={`/assets/${item.asset_id}/maintenance-events/new?task=${encodeURIComponent(item.tasks.join(', '))}`}>
               Record Activity
@@ -82,10 +84,12 @@ export function DashboardPage() {
         <div className="upcoming-list">
           {groupedDueSoon.map((item) => (
             <div key={item.asset_id} className="upcoming-item">
-              <div>
+              <div className="dashboard-asset-details">
                 <AssetThumbnail thumbnailPath={item.thumbnail_path} name={item.asset_name} />
-                <strong>{item.asset_name}</strong>
-                <p className="muted-text mb-0">{item.tasks.join(', ')}</p>
+                <Link to={`/assets/${item.asset_id}`}><strong>{item.asset_name}</strong></Link>
+                <div className="badges">
+                  {item.tasks.map((taskName) => <span key={`${item.asset_id}-${taskName}`} className="badge">{taskName}</span>)}
+                </div>
               </div>
               <Link className="btn btn-sm btn-outline-primary" to={`/assets/${item.asset_id}/maintenance-events/new?task=${encodeURIComponent(item.tasks.join(', '))}`}>
                 Record Activity
@@ -97,7 +101,7 @@ export function DashboardPage() {
       <section className="card">
         <h3 className="h5">Recently completed</h3>
         {data.recent_events.map((event) => (
-          <div key={event.id} className="meter-highlight">
+          <div key={event.id} className="meter-highlight dashboard-maintenance-card">
             <p>
               <Link to={`/assets/${event.asset_id}`}>
                 <strong>{event.asset_name}</strong>
