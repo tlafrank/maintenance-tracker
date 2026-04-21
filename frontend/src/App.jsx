@@ -5,6 +5,7 @@ import {
   AssetDetailPage,
   AssetEditPage,
   AssetFormPage,
+  AssetHistoryPage,
   AssetListPage,
   MaintenanceEventFormPage,
   MeterReadingFormPage,
@@ -81,6 +82,7 @@ export default function App() {
         <Route path="/assets" element={<ProtectedRoute authState={authState}><AssetListPage /></ProtectedRoute>} />
         <Route path="/assets/new" element={<ProtectedRoute authState={authState}><AssetFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id" element={<ProtectedRoute authState={authState}><AssetDetailPage /></ProtectedRoute>} />
+        <Route path="/assets/:id/history" element={<ProtectedRoute authState={authState}><AssetHistoryPage /></ProtectedRoute>} />
         <Route path="/assets/:id/edit" element={<ProtectedRoute authState={authState}><AssetEditPage /></ProtectedRoute>} />
         <Route path="/assets/:id/readings/new" element={<ProtectedRoute authState={authState}><MeterReadingFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id/maintenance-events/new" element={<ProtectedRoute authState={authState}><MaintenanceEventFormPage /></ProtectedRoute>} />

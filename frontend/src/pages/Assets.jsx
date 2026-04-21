@@ -52,6 +52,10 @@ function localDateInputValue() {
   return new Date(now.getTime() - tzOffsetMs).toISOString().slice(0, 10)
 }
 
+function localLongDateValue() {
+  return formatLongDate(`${localDateInputValue()}T00:00:00`)
+}
+
 function relativeTimeFromNow(isoDateString) {
   if (!isoDateString) return 'Unknown'
   const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
@@ -109,6 +113,14 @@ function formatLongDate(isoDateString) {
     month: 'long',
     year: 'numeric',
   })
+}
+
+function longDateToIsoDate(value) {
+  const normalizedValue = value.trim()
+  if (!normalizedValue) return ''
+  const parsed = new Date(`${normalizedValue} UTC`)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return parsed.toISOString().slice(0, 10)
 }
 
 function formatReadingDateTime(isoDateString) {
@@ -473,7 +485,6 @@ export function AssetDetailPage() {
   const [readings, setReadings] = useState([])
   const [schedules, setSchedules] = useState([])
   const [events, setEvents] = useState([])
-  const [historySearch, setHistorySearch] = useState('')
   const [thumbnailUploadError, setThumbnailUploadError] = useState('')
   const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false)
 
@@ -493,15 +504,7 @@ export function AssetDetailPage() {
   const compatibleMeters = useMemo(() => meters.filter((meter) => meter.service_trigger === asset?.service_trigger), [meters, asset])
   const latestReadingMeter = meters.find((meter) => meter.id === latestReading?.meter_id)
   const usageTypeLabel = usageLabel(asset?.service_trigger)
-  const filteredEvents = useMemo(() => {
-    const normalizedSearch = historySearch.trim().toLowerCase()
-    if (!normalizedSearch) return events
-    const searchTerms = normalizedSearch.split(/\s+/).filter(Boolean)
-    return events.filter((event) => {
-      const searchableContent = `${event.event_type || ''} ${event.notes || ''}`.toLowerCase()
-      return searchTerms.every((term) => searchableContent.includes(term))
-    })
-  }, [events, historySearch])
+  const recentEvents = events.slice(0, 5)
 
   if (!asset) return <p>Loading...</p>
 
@@ -587,7 +590,9 @@ export function AssetDetailPage() {
           const isTimeOverdue = daysLeft !== null && !Number.isNaN(daysLeft) && daysLeft < 0
           const isTimeUpcoming = daysLeft !== null && !Number.isNaN(daysLeft) && daysLeft >= 0 && daysLeft <= 14
           const isUsageUpcoming = usageRemaining !== null && usageRemaining > 0 && usageInterval && usageRemaining <= Number(usageInterval) * 0.2
-          const status = (isTimeOverdue || isUsageOverdue) ? 'overdue' : ((isTimeUpcoming || isUsageUpcoming) ? 'upcoming' : 'future')
+          const status = !lastMatchingEvent
+            ? 'overdue'
+            : (isTimeOverdue || isUsageOverdue) ? 'overdue' : ((isTimeUpcoming || isUsageUpcoming) ? 'upcoming' : 'future')
           const intervalParts = [intervalPeriodLabel(schedule.interval_days)]
           if (usageInterval) intervalParts.push(`Every ${formatIntervalValue(usageInterval)} ${usageUnit(asset.service_trigger)}`)
           const intervalSummary = intervalParts.filter(Boolean).join(' | ')
@@ -612,15 +617,9 @@ export function AssetDetailPage() {
         })}
       </section>
       <section className="card">
-        <h3>Maintenance history</h3>
-        <input
-          aria-label="Search maintenance history"
-          placeholder="Search tasks or notes"
-          value={historySearch}
-          onChange={(e) => setHistorySearch(e.target.value)}
-        />
-        {filteredEvents.length === 0 && <p className="muted-text">No maintenance activities match your search.</p>}
-        {filteredEvents.map((ev) => (
+        <h3>Recent maintenance history</h3>
+        {recentEvents.length === 0 && <p className="muted-text">No maintenance activities recorded yet.</p>}
+        {recentEvents.map((ev) => (
           <div key={ev.id} className="meter-highlight">
             <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDate(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `@ ${formatIntervalValue(ev.completion_meter_value)} ${usageUnit(asset.service_trigger)}` : ''}</p>
             <div className="badges">
@@ -632,8 +631,80 @@ export function AssetDetailPage() {
             {ev.notes && <p className="muted-text">{ev.notes}</p>}
           </div>
         ))}
+        <p className="hint">
+          <Link to={`/assets/${id}/history`}>View full maintenance history</Link>
+        </p>
       </section>
     </div>
+  )
+}
+
+export function AssetHistoryPage() {
+  const { id } = useParams()
+  const [asset, setAsset] = useState(null)
+  const [events, setEvents] = useState([])
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const pageSize = 20
+
+  useEffect(() => {
+    Promise.all([apiFetch(`/assets/${id}`), apiFetch(`/assets/${id}/maintenance-events`)]).then(([assetResult, eventsResult]) => {
+      setAsset(assetResult)
+      setEvents(eventsResult)
+    })
+  }, [id])
+
+  const filteredEvents = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase()
+    if (!normalizedSearch) return events
+    const searchTerms = normalizedSearch.split(/\s+/).filter(Boolean)
+    return events.filter((event) => {
+      const searchableContent = `${event.event_type || ''} ${event.notes || ''}`.toLowerCase()
+      return searchTerms.every((term) => searchableContent.includes(term))
+    })
+  }, [events, search])
+
+  const totalPages = Math.max(1, Math.ceil(filteredEvents.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const pagedEvents = filteredEvents.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
+  useEffect(() => { setPage(1) }, [search, id])
+
+  return (
+    <section className="card span-all">
+      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Full maintenance history' }]} />
+      <h3>Full maintenance history</h3>
+      <input
+        aria-label="Search maintenance history"
+        placeholder="Search tasks or notes"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      {pagedEvents.length === 0 && <p className="muted-text">No maintenance activities match your search.</p>}
+      {pagedEvents.map((ev) => (
+        <div key={ev.id} className="meter-highlight">
+          <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDate(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `@ ${formatIntervalValue(ev.completion_meter_value)} ${usageUnit(asset?.service_trigger)}` : ''}</p>
+          <div className="badges">
+            {ev.event_type.split(',').map((task) => {
+              const trimmedTask = task.trim()
+              return trimmedTask ? <span key={`${ev.id}-${trimmedTask}`} className="badge">{trimmedTask}</span> : null
+            })}
+          </div>
+          {ev.notes && <p className="muted-text">{ev.notes}</p>}
+        </div>
+      ))}
+      {totalPages > 1 && (
+        <div className="actions">
+          <button type="button" className="btn btn-outline-secondary" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+            Previous
+          </button>
+          <span className="hint">{`Page ${currentPage} of ${totalPages}`}</span>
+          <button type="button" className="btn btn-outline-secondary" disabled={currentPage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>
+            Next
+          </button>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -737,7 +808,7 @@ export function MaintenanceEventFormPage() {
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
   const [meters, setMeters] = useState([])
-  const [form, setForm] = useState({ completion_meter_value: '', notes: '', performed_date: localDateInputValue() })
+  const [form, setForm] = useState({ completion_meter_value: '', notes: '', performed_date: localLongDateValue() })
   const [taskInput, setTaskInput] = useState('')
   const [tasks, setTasks] = useState([])
   const [taskSuggestions, setTaskSuggestions] = useState([])
@@ -761,7 +832,7 @@ export function MaintenanceEventFormPage() {
       setForm({
         completion_meter_value: event.completion_meter_value ?? '',
         notes: event.notes ?? '',
-        performed_date: event.performed_at ? event.performed_at.slice(0, 10) : localDateInputValue(),
+        performed_date: event.performed_at ? formatLongDate(event.performed_at) : localLongDateValue(),
       })
     })
   }, [id, editEventId])
@@ -809,11 +880,16 @@ export function MaintenanceEventFormPage() {
     }
     setTasks(mergedTasks)
     setTaskInput('')
+    const isoPerformedDate = longDateToIsoDate(form.performed_date)
+    if (!isoPerformedDate) {
+      setError('Enter Activity Date in format like "19 April 2026".')
+      return
+    }
     const payload = {
       event_type: mergedTasks.join(', '),
       notes: form.notes?.trim() || null,
       completion_meter_value: form.completion_meter_value ? Number(form.completion_meter_value) : null,
-      performed_at: form.performed_date ? `${form.performed_date}T00:00:00` : null,
+      performed_at: `${isoPerformedDate}T00:00:00`,
     }
     await apiFetch(editEventId ? `/maintenance-events/${editEventId}` : `/assets/${id}/maintenance-events`, {
       method: editEventId ? 'PUT' : 'POST',
@@ -881,8 +957,13 @@ export function MaintenanceEventFormPage() {
       <label htmlFor="completion-meter">{`Current ${usageLabel(asset?.service_trigger)} (Last recorded: ${activeMeter?.current_value !== null && activeMeter?.current_value !== undefined ? `${formatIntervalValue(activeMeter.current_value)} ${activeMeter.unit}` : `No reading ${usageUnit(asset?.service_trigger)}`})`}</label>
       <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
       <label htmlFor="performed-date">Activity Date</label>
-      <input id="performed-date" type="date" value={form.performed_date} onChange={(e) => setForm({ ...form, performed_date: e.target.value })} />
-      {form.performed_date && <p className="hint">{formatLongDate(`${form.performed_date}T00:00:00`)}</p>}
+      <input
+        id="performed-date"
+        value={form.performed_date}
+        onChange={(e) => setForm({ ...form, performed_date: e.target.value })}
+        placeholder="19 April 2026"
+      />
+      <p className="hint">Use format: DD Month YYYY (e.g., 19 April 2026)</p>
       <label htmlFor="maintenance-notes">Notes</label>
       <textarea id="maintenance-notes" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
 
