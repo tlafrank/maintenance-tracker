@@ -818,12 +818,18 @@ export function MaintenanceEventFormPage() {
   const [form, setForm] = useState({ completion_meter_value: '', notes: '', performed_date: localDateInputValue() })
   const [taskInput, setTaskInput] = useState('')
   const [tasks, setTasks] = useState([])
+  const [isTaskInputLocked, setIsTaskInputLocked] = useState(false)
   const [taskSuggestions, setTaskSuggestions] = useState([])
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([apiFetch(`/assets/${id}`), apiFetch('/maintenance-tasks'), apiFetch(`/assets/${id}/meters`), apiFetch(`/assets/${id}/maintenance-events`)])
-      .then(([assetResult, suggestions, meterResult, assetEvents]) => {
+    apiFetch(`/assets/${id}`)
+      .then(async (assetResult) => {
+        const [suggestions, meterResult, assetEvents] = await Promise.all([
+          apiFetch(`/maintenance-tasks?asset_type=${encodeURIComponent(assetResult.asset_type)}`),
+          apiFetch(`/assets/${id}/meters`),
+          apiFetch(`/assets/${id}/maintenance-events`),
+        ])
         setAsset(assetResult)
         const templateTaskNames = suggestions
           .filter((suggestion) => suggestion.id !== null)
@@ -843,6 +849,7 @@ export function MaintenanceEventFormPage() {
       const event = events.find((candidate) => String(candidate.id) === String(editEventId))
       if (!event) return
       setTasks(event.event_type.split(',').map((task) => task.trim()).filter(Boolean))
+      setIsTaskInputLocked(Boolean(event.event_type?.trim()))
       setForm({
         completion_meter_value: event.completion_meter_value ?? '',
         notes: event.notes ?? '',
@@ -858,6 +865,7 @@ export function MaintenanceEventFormPage() {
       if (incomingTasks.length === 0) return current
       const existing = new Set(current.map((task) => task.toLowerCase()))
       const additions = incomingTasks.filter((task) => !existing.has(task.toLowerCase()))
+      if (additions.length) setIsTaskInputLocked(true)
       return additions.length ? [...current, ...additions] : current
     })
   }, [prefillTask, editEventId])
@@ -870,6 +878,7 @@ export function MaintenanceEventFormPage() {
       return [...current, trimmed]
     })
     setTaskInput('')
+    setIsTaskInputLocked(true)
   }
 
   function commitTaskFromInput() {
@@ -930,7 +939,11 @@ export function MaintenanceEventFormPage() {
             <button
               type="button"
               className="badge-remove"
-              onClick={() => setTasks((current) => current.filter((value) => value !== task))}
+              onClick={() => setTasks((current) => {
+                const nextTasks = current.filter((value) => value !== task)
+                if (nextTasks.length === 0) setIsTaskInputLocked(false)
+                return nextTasks
+              })}
             >
               ×
             </button>
@@ -941,6 +954,7 @@ export function MaintenanceEventFormPage() {
           id="task-input"
           list="task-options"
           value={taskInput}
+          disabled={isTaskInputLocked}
           onChange={(e) => {
             const nextValue = e.target.value
             setTaskInput(nextValue)
@@ -961,6 +975,7 @@ export function MaintenanceEventFormPage() {
           }}
         />
       </div>
+      {isTaskInputLocked && <p className="hint">Delete a task pill to enter another task.</p>}
       <datalist id="task-options">
         {taskSuggestions
           .filter((task) => !tasks.some((selectedTask) => selectedTask.toLowerCase() === task.toLowerCase()))

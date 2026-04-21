@@ -126,6 +126,7 @@ class MaintenanceTaskTemplate(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
+    asset_type: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     task_name: Mapped[str] = mapped_column(String(100))
 
     owner: Mapped['User'] = relationship(back_populates='maintenance_tasks')

@@ -374,6 +374,19 @@ def create_schedule(asset_id: int, payload: ScheduleCreate, current_user: User =
     schedule_payload = _normalize_usage_intervals(asset, payload.model_dump())
     schedule = MaintenanceSchedule(asset_id=asset_id, **schedule_payload)
     db.add(schedule)
+    existing_template = db.scalar(
+        select(MaintenanceTaskTemplate).where(
+            MaintenanceTaskTemplate.owner_user_id == current_user.id,
+            MaintenanceTaskTemplate.asset_type == asset.asset_type,
+            MaintenanceTaskTemplate.task_name == payload.title.strip(),
+        )
+    )
+    if not existing_template and payload.title.strip():
+        db.add(MaintenanceTaskTemplate(
+            owner_user_id=current_user.id,
+            asset_type=asset.asset_type,
+            task_name=payload.title.strip(),
+        ))
     db.commit()
     db.refresh(schedule)
     return schedule
@@ -535,51 +548,41 @@ def list_maintenance_activities(current_user: User = Depends(get_current_user), 
 
 
 @router.get('/maintenance-tasks', response_model=list[MaintenanceTaskSuggestion])
-def list_maintenance_tasks(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_maintenance_tasks(asset_type: str | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    normalized_asset_type = asset_type.strip() if asset_type else None
     templates = db.scalars(
         select(MaintenanceTaskTemplate)
         .where(MaintenanceTaskTemplate.owner_user_id == current_user.id)
+        .where(MaintenanceTaskTemplate.asset_type == normalized_asset_type if normalized_asset_type else True)
         .order_by(MaintenanceTaskTemplate.task_name)
     ).all()
     tasks: list[MaintenanceTaskSuggestion] = [
-        MaintenanceTaskSuggestion(id=template.id, task_name=template.task_name)
+        MaintenanceTaskSuggestion(id=template.id, asset_type=template.asset_type, task_name=template.task_name)
         for template in templates
     ]
-    seen: set[str] = {template.task_name.strip().lower() for template in templates}
-
-    events = db.scalars(
-        select(MaintenanceEvent)
-        .where(MaintenanceEvent.performed_by_user_id == current_user.id)
-        .order_by(desc(MaintenanceEvent.performed_at))
-    ).all()
-    for event in events:
-        for task in [part.strip() for part in event.event_type.split(',')]:
-            key = task.lower()
-            if not task or key in seen:
-                continue
-            seen.add(key)
-            tasks.append(MaintenanceTaskSuggestion(id=None, task_name=task))
     return tasks
 
 
 @router.post('/maintenance-tasks', response_model=MaintenanceTaskSuggestion)
 def create_maintenance_task(payload: MaintenanceTaskCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task_name = payload.task_name.strip()
+    normalized_asset_type = payload.asset_type.strip() if payload.asset_type else None
     if not task_name:
         raise HTTPException(status_code=400, detail='Task name is required')
     existing = db.scalar(
         select(MaintenanceTaskTemplate).where(
             MaintenanceTaskTemplate.owner_user_id == current_user.id,
             MaintenanceTaskTemplate.task_name == task_name,
+            MaintenanceTaskTemplate.asset_type == normalized_asset_type,
         )
     )
     if existing:
         raise HTTPException(status_code=400, detail='Task already exists')
-    template = MaintenanceTaskTemplate(owner_user_id=current_user.id, task_name=task_name)
+    template = MaintenanceTaskTemplate(owner_user_id=current_user.id, asset_type=normalized_asset_type, task_name=task_name)
     db.add(template)
     db.commit()
     db.refresh(template)
-    return MaintenanceTaskSuggestion(id=template.id, task_name=template.task_name)
+    return MaintenanceTaskSuggestion(id=template.id, asset_type=template.asset_type, task_name=template.task_name)
 
 
 @router.put('/maintenance-tasks/{task_id}', response_model=MaintenanceTaskSuggestion)
@@ -588,12 +591,14 @@ def update_maintenance_task(task_id: int, payload: MaintenanceTaskUpdate, curren
     if not template or template.owner_user_id != current_user.id:
         raise HTTPException(status_code=404, detail='Maintenance task not found')
     task_name = payload.task_name.strip()
+    normalized_asset_type = payload.asset_type.strip() if payload.asset_type else None
     if not task_name:
         raise HTTPException(status_code=400, detail='Task name is required')
     template.task_name = task_name
+    template.asset_type = normalized_asset_type
     db.commit()
     db.refresh(template)
-    return MaintenanceTaskSuggestion(id=template.id, task_name=template.task_name)
+    return MaintenanceTaskSuggestion(id=template.id, asset_type=template.asset_type, task_name=template.task_name)
 
 
 @router.put('/maintenance-tasks/rename')

@@ -185,6 +185,7 @@ class MaintenanceActivitySuggestion(BaseModel):
 
 class MaintenanceTaskSuggestion(BaseModel):
     id: int | None = None
+    asset_type: str | None = None
     task_name: str
 
 
@@ -194,10 +195,12 @@ class MaintenanceTaskRename(BaseModel):
 
 
 class MaintenanceTaskCreate(BaseModel):
+    asset_type: str | None = None
     task_name: str
 
 
 class MaintenanceTaskUpdate(BaseModel):
+    asset_type: str | None = None
     task_name: str
 
 
