@@ -1044,12 +1044,12 @@ export function ScheduleFormPage() {
   const [form, setForm] = useState({ title: '', description: '', time_interval: '', usage_interval: '' })
 
   useEffect(() => {
-    Promise.all([
-      apiFetch(`/assets/${id}`),
-      apiFetch('/maintenance-tasks'),
-      apiFetch(`/assets/${id}/schedules`),
-    ])
-      .then(([assetResult, suggestions, schedules]) => {
+    apiFetch(`/assets/${id}`)
+      .then(async (assetResult) => {
+        const [suggestions, schedules] = await Promise.all([
+          apiFetch(`/maintenance-tasks?asset_type=${encodeURIComponent(assetResult.asset_type)}`),
+          apiFetch(`/assets/${id}/schedules`),
+        ])
         setAsset(assetResult)
         setActivitySuggestions(suggestions.map((suggestion) => ({ activity_name: suggestion.task_name })))
         setExistingScheduleTitles(schedules.map((schedule) => schedule.title.trim().toLowerCase()))
