@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = 'HS256'
     jwt_access_token_expire_minutes: int = 525600
     cors_origins: str = 'http://localhost:5173'
+    uploads_dir: str = '/data/uploads'
 
 
 settings = Settings()

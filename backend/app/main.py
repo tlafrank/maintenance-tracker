@@ -24,7 +24,7 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
-uploads_root = Path('/tmp/maintenance-tracker/uploads')
+uploads_root = Path(settings.uploads_dir)
 uploads_root.mkdir(parents=True, exist_ok=True)
 app.mount('/uploads', StaticFiles(directory=uploads_root), name='uploads')
 

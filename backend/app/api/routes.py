@@ -11,6 +11,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import get_db
 from app.models.models import Asset, AssetType, MaintenanceEvent, MaintenanceSchedule, MaintenanceTaskTemplate, Meter, MeterReading, User
@@ -47,7 +48,7 @@ from app.services.due_logic import evaluate_schedule_status, latest_meter_map
 
 router = APIRouter()
 auth_logger = logging.getLogger('app.auth')
-UPLOAD_DIRECTORY = Path('/tmp/maintenance-tracker/uploads/assets')
+UPLOAD_DIRECTORY = Path(settings.uploads_dir) / 'assets'
 ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_THUMBNAIL_DIMENSIONS = (1024, 1024)
@@ -175,7 +176,7 @@ def _owned_asset(asset_id: int, user_id: int, db: Session) -> Asset:
 def _delete_existing_thumbnail(asset: Asset):
     if not asset.thumbnail_path:
         return
-    existing_path = Path('/tmp/maintenance-tracker') / asset.thumbnail_path.lstrip('/')
+    existing_path = Path(settings.uploads_dir) / asset.thumbnail_path.replace('/uploads/', '', 1).lstrip('/')
     if existing_path.exists():
         existing_path.unlink()
 
@@ -266,13 +267,14 @@ async def upload_asset_thumbnail(
 
     extension = '.webp'
 
-    UPLOAD_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    user_upload_directory = UPLOAD_DIRECTORY / str(current_user.id)
+    user_upload_directory.mkdir(parents=True, exist_ok=True)
     filename = f'{asset.id}-{uuid4().hex}{extension}'
-    saved_path = UPLOAD_DIRECTORY / filename
+    saved_path = user_upload_directory / filename
     saved_path.write_bytes(optimized_content)
 
     _delete_existing_thumbnail(asset)
-    asset.thumbnail_path = f'/uploads/assets/{filename}'
+    asset.thumbnail_path = f'/uploads/assets/{current_user.id}/{filename}'
     db.commit()
     db.refresh(asset)
     return asset

@@ -94,13 +94,13 @@ export function ProfilePage({ onLogout }) {
 
   return (
     <div className="card narrow-card">
-      <form onSubmit={submit}>
+      <form onSubmit={submit} autoComplete="off">
         <h2>Profile</h2>
       {error && <p className="error">{error}</p>}
       {message && <p>{message}</p>}
 
       <label htmlFor="profile-unit">Preferred Distance Unit</label>
-      <select id="profile-unit" value={form.preferred_distance_unit} onChange={(e) => setForm({ ...form, preferred_distance_unit: e.target.value })}>
+      <select id="profile-unit" autoComplete="off" value={form.preferred_distance_unit} onChange={(e) => setForm({ ...form, preferred_distance_unit: e.target.value })}>
         {DISTANCE_UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
       </select>
 
@@ -110,15 +110,16 @@ export function ProfilePage({ onLogout }) {
         type="number"
         min="1"
         step="1"
+        autoComplete="off"
         value={upcomingTaskWindowWeeks}
         onChange={(e) => setUpcomingTaskWindowWeeks(e.target.value)}
       />
 
       <label htmlFor="profile-current-password">Current Password</label>
-      <input id="profile-current-password" type="password" value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} />
+      <input id="profile-current-password" autoComplete="current-password" type="password" value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} />
 
       <label htmlFor="profile-new-password">New Password</label>
-      <input id="profile-new-password" type="password" value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} />
+      <input id="profile-new-password" autoComplete="new-password" type="password" value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} />
 
       <div className="actions">
         <button className="btn btn-primary" type="submit">Save profile</button>
@@ -134,14 +135,15 @@ export function ProfilePage({ onLogout }) {
       <select id="task-library-asset-type" value={selectedAssetType} onChange={(e) => setSelectedAssetType(e.target.value)}>
         {assetTypes.map((assetType) => <option key={assetType.id} value={assetType.name}>{assetType.name}</option>)}
       </select>
-      <form onSubmit={addTask}>
+      <form onSubmit={addTask} autoComplete="off">
         <label htmlFor="new-maintenance-task">Add maintenance task</label>
         <div className="actions">
-          <input id="new-maintenance-task" value={taskName} onChange={(e) => setTaskName(e.target.value)} placeholder="e.g. Rotate Tyres" />
+          <input id="new-maintenance-task" autoComplete="off" value={taskName} onChange={(e) => setTaskName(e.target.value)} placeholder="e.g. Rotate Tyres" />
           <button className="btn btn-outline-primary" type="submit" disabled={!selectedAssetType}>Add Task</button>
         </div>
       </form>
       <div className="badges">
+        {tasks.length === 0 && <p className="muted-text">No maintenance tasks saved for this asset type yet.</p>}
         {tasks.map((task) => (
           <div key={`${task.id ?? 'suggestion'}-${task.task_name}`} className="badge">
             {editingTaskId === task.id && task.id !== null ? (
