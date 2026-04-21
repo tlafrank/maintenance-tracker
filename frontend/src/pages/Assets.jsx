@@ -168,6 +168,24 @@ function usageRemainingText(remainingUsage, serviceTrigger) {
   return `${Math.round(remainingUsage).toLocaleString('en-US')} ${usageUnit(serviceTrigger)}`
 }
 
+function highestServiceValue({ readings = [], events = [], meterValue = null }) {
+  const values = []
+  readings.forEach((reading) => {
+    if (reading?.reading_value !== null && reading?.reading_value !== undefined && !Number.isNaN(Number(reading.reading_value))) {
+      values.push(Number(reading.reading_value))
+    }
+  })
+  events.forEach((event) => {
+    if (event?.completion_meter_value !== null && event?.completion_meter_value !== undefined && !Number.isNaN(Number(event.completion_meter_value))) {
+      values.push(Number(event.completion_meter_value))
+    }
+  })
+  if (meterValue !== null && meterValue !== undefined && !Number.isNaN(Number(meterValue))) {
+    values.push(Number(meterValue))
+  }
+  return values.length ? Math.max(...values) : null
+}
+
 function Breadcrumbs({ items }) {
   return (
     <nav className="breadcrumbs" aria-label="Breadcrumb">
@@ -500,6 +518,7 @@ export function AssetDetailPage() {
   const latestReading = readings[0]
   const compatibleMeters = useMemo(() => meters.filter((meter) => meter.service_trigger === asset?.service_trigger), [meters, asset])
   const latestReadingMeter = meters.find((meter) => meter.id === latestReading?.meter_id)
+  const currentServiceValue = highestServiceValue({ readings, events, meterValue: latestReadingMeter?.current_value })
   const usageTypeLabel = usageLabel(asset?.service_trigger)
   const recentEvents = events.slice(0, 5)
 
@@ -557,10 +576,10 @@ export function AssetDetailPage() {
       </section>
       <section className="card">
         <h3>Current Reading</h3>
-        {latestReading ? (
+        {currentServiceValue !== null ? (
           <div className="meter-highlight">
-            <p><strong>{`Current ${usageLabel(asset.service_trigger)}`}:</strong> {formatIntervalValue(latestReading.reading_value)} {latestReadingMeter?.unit || usageUnit(asset.service_trigger)}</p>
-            <p className="muted-text">{formatReadingDate(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>
+            <p><strong>{`Current ${usageLabel(asset.service_trigger)}`}:</strong> {formatIntervalValue(currentServiceValue)} {latestReadingMeter?.unit || usageUnit(asset.service_trigger)}</p>
+            {latestReading && <p className="muted-text">{formatReadingDate(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>}
           </div>
         ) : (
           <p>No readings recorded yet.</p>
@@ -583,9 +602,7 @@ export function AssetDetailPage() {
             : asset.service_trigger === 'hours'
               ? schedule.interval_hours
               : schedule.interval_cycles
-          const currentReading = latestReading?.reading_value !== null && latestReading?.reading_value !== undefined
-            ? Number(latestReading.reading_value)
-            : null
+          const currentReading = currentServiceValue
           const usageBaseline = lastMatchingEvent?.completion_meter_value !== null && lastMatchingEvent?.completion_meter_value !== undefined
             ? Number(lastMatchingEvent.completion_meter_value)
             : 0
@@ -820,6 +837,7 @@ export function MaintenanceEventFormPage() {
   const [tasks, setTasks] = useState([])
   const [isTaskInputLocked, setIsTaskInputLocked] = useState(false)
   const [taskSuggestions, setTaskSuggestions] = useState([])
+  const [existingEvents, setExistingEvents] = useState([])
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -839,6 +857,7 @@ export function MaintenanceEventFormPage() {
           .filter(Boolean)
         const uniqueTaskNames = Array.from(new Set([...templateTaskNames, ...assetSpecificTaskNames]))
         setTaskSuggestions(uniqueTaskNames)
+        setExistingEvents(assetEvents)
         setMeters(meterResult)
       })
       .catch((err) => setError(err.message || 'Unable to load asset details'))
@@ -846,6 +865,7 @@ export function MaintenanceEventFormPage() {
   useEffect(() => {
     if (!editEventId) return
     apiFetch(`/assets/${id}/maintenance-events`).then((events) => {
+      setExistingEvents(events)
       const event = events.find((candidate) => String(candidate.id) === String(editEventId))
       if (!event) return
       setTasks(event.event_type.split(',').map((task) => task.trim()).filter(Boolean))
@@ -923,6 +943,7 @@ export function MaintenanceEventFormPage() {
   }
 
   const activeMeter = meters[0]
+  const currentServiceValue = highestServiceValue({ events: existingEvents, meterValue: activeMeter?.current_value })
 
   return (
     <form onSubmit={submit} className="card narrow-card">
@@ -982,7 +1003,7 @@ export function MaintenanceEventFormPage() {
           .map((task) => <option key={task} value={task} />)}
       </datalist>
       <p className="hint">Type a task and press comma to add it. Click a badge to remove it.</p>
-      <label htmlFor="completion-meter">{`Current ${usageLabel(asset?.service_trigger)} (Last recorded: ${activeMeter?.current_value !== null && activeMeter?.current_value !== undefined ? `${formatIntervalValue(activeMeter.current_value)} ${activeMeter.unit}` : `No reading ${usageUnit(asset?.service_trigger)}`})`}</label>
+      <label htmlFor="completion-meter">{`Current ${usageLabel(asset?.service_trigger)} (Last recorded: ${currentServiceValue !== null ? `${formatIntervalValue(currentServiceValue)} ${activeMeter?.unit || usageUnit(asset?.service_trigger)}` : `No reading ${usageUnit(asset?.service_trigger)}`})`}</label>
       <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
       <label htmlFor="performed-date">Activity Date</label>
       <input
@@ -1010,6 +1031,7 @@ export function ScheduleFormPage() {
   const [error, setError] = useState('')
   const [activitySuggestions, setActivitySuggestions] = useState([])
   const [existingScheduleTitles, setExistingScheduleTitles] = useState([])
+  const [taskInput, setTaskInput] = useState('')
   const [form, setForm] = useState({ title: '', description: '', time_interval: '', usage_interval: '' })
 
   useEffect(() => {
@@ -1055,6 +1077,13 @@ export function ScheduleFormPage() {
     navigate(`/assets/${id}`)
   }
 
+  function commitTaskTitle(value) {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    setForm((current) => ({ ...current, title: trimmed }))
+    setTaskInput('')
+  }
+
   return (
     <form onSubmit={submit} className="card narrow-card">
       <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Add Scheduled Maintenance Task' }]} />
@@ -1063,7 +1092,30 @@ export function ScheduleFormPage() {
       {error && <p className="error">{error}</p>}
 
       <label htmlFor="schedule-title">Maintenance Task</label>
-      <input id="schedule-title" list="scheduled-activity-options" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+      <div className="task-input-box">
+        {form.title && (
+          <span className="badge">
+            {form.title}
+            <button type="button" className="badge-remove" onClick={() => setForm((current) => ({ ...current, title: '' }))}>×</button>
+          </span>
+        )}
+        <input
+          id="schedule-title"
+          list="scheduled-activity-options"
+          required={!form.title}
+          className="task-inline-input"
+          value={form.title ? '' : taskInput}
+          disabled={Boolean(form.title)}
+          onChange={(e) => setTaskInput(e.target.value)}
+          onBlur={() => commitTaskTitle(taskInput)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commitTaskTitle(taskInput)
+            }
+          }}
+        />
+      </div>
       <datalist id="scheduled-activity-options">
         {activitySuggestions
           .filter((suggestion) => !existingScheduleTitles.includes(suggestion.activity_name.trim().toLowerCase()))
@@ -1095,6 +1147,7 @@ export function ScheduleEditPage() {
   const { id, scheduleId } = useParams()
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
+  const [taskInput, setTaskInput] = useState('')
   const [form, setForm] = useState({ title: '', description: '', time_interval: '', usage_interval: '' })
   const [schedule, setSchedule] = useState(null)
   const [error, setError] = useState('')
@@ -1156,13 +1209,42 @@ export function ScheduleEditPage() {
     navigate(`/assets/${id}`)
   }
 
+  function commitTaskTitle(value) {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    setForm((current) => ({ ...current, title: trimmed }))
+    setTaskInput('')
+  }
+
   return (
     <form onSubmit={submit} className="card narrow-card">
       <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: form.title || 'Edit Scheduled Maintenance Task' }]} />
       <h2>Edit Scheduled Maintenance Task</h2>
       {error && <p className="error">{error}</p>}
       <label htmlFor="edit-schedule-title">Maintenance Task</label>
-      <input id="edit-schedule-title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+      <div className="task-input-box">
+        {form.title && (
+          <span className="badge">
+            {form.title}
+            <button type="button" className="badge-remove" onClick={() => setForm((current) => ({ ...current, title: '' }))}>×</button>
+          </span>
+        )}
+        <input
+          id="edit-schedule-title"
+          required={!form.title}
+          className="task-inline-input"
+          value={form.title ? '' : taskInput}
+          disabled={Boolean(form.title)}
+          onChange={(e) => setTaskInput(e.target.value)}
+          onBlur={() => commitTaskTitle(taskInput)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commitTaskTitle(taskInput)
+            }
+          }}
+        />
+      </div>
       <label htmlFor="edit-schedule-description">Description</label>
       <textarea id="edit-schedule-description" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
       <label htmlFor="edit-schedule-time-interval">Service Interval - Time-based maintenance (optional)</label>
