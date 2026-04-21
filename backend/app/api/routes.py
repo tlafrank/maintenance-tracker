@@ -28,6 +28,7 @@ from app.schemas.schemas import (
     MaintenanceTaskSuggestion,
     MaintenanceTaskRename,
     MaintenanceTaskCreate,
+    MaintenanceTaskDeleteImpact,
     MaintenanceTaskUpdate,
     MeterCreate,
     MeterOut,
@@ -599,6 +600,92 @@ def update_maintenance_task(task_id: int, payload: MaintenanceTaskUpdate, curren
     db.commit()
     db.refresh(template)
     return MaintenanceTaskSuggestion(id=template.id, asset_type=template.asset_type, task_name=template.task_name)
+
+
+def _maintenance_task_impact(template: MaintenanceTaskTemplate, current_user: User, db: Session) -> MaintenanceTaskDeleteImpact:
+    matching_assets = db.scalars(
+        select(Asset).where(
+            Asset.owner_user_id == current_user.id,
+            Asset.asset_type == template.asset_type,
+        )
+    ).all()
+    matching_asset_ids = {asset.id for asset in matching_assets}
+
+    schedules = db.scalars(
+        select(MaintenanceSchedule).where(MaintenanceSchedule.asset_id.in_(matching_asset_ids))
+    ).all() if matching_asset_ids else []
+    affected_schedules = sum(1 for schedule in schedules if schedule.title.strip().lower() == template.task_name.strip().lower() and schedule.active)
+
+    events = db.scalars(
+        select(MaintenanceEvent).where(MaintenanceEvent.asset_id.in_(matching_asset_ids))
+    ).all() if matching_asset_ids else []
+    affected_history_records = 0
+    deleted_history_records = 0
+    for event in events:
+        tasks = [part.strip() for part in event.event_type.split(',') if part.strip()]
+        kept_tasks = [task for task in tasks if task.lower() != template.task_name.strip().lower()]
+        if len(kept_tasks) != len(tasks):
+            if kept_tasks:
+                affected_history_records += 1
+            else:
+                deleted_history_records += 1
+
+    return MaintenanceTaskDeleteImpact(
+        task_name=template.task_name,
+        asset_type=template.asset_type,
+        affected_schedules=affected_schedules,
+        affected_history_records=affected_history_records,
+        deleted_history_records=deleted_history_records,
+    )
+
+
+@router.get('/maintenance-tasks/{task_id}/impact', response_model=MaintenanceTaskDeleteImpact)
+def maintenance_task_impact(task_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    template = db.get(MaintenanceTaskTemplate, task_id)
+    if not template or template.owner_user_id != current_user.id:
+        raise HTTPException(status_code=404, detail='Maintenance task not found')
+    return _maintenance_task_impact(template, current_user, db)
+
+
+@router.delete('/maintenance-tasks/{task_id}', response_model=MaintenanceTaskDeleteImpact)
+def delete_maintenance_task(task_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    template = db.get(MaintenanceTaskTemplate, task_id)
+    if not template or template.owner_user_id != current_user.id:
+        raise HTTPException(status_code=404, detail='Maintenance task not found')
+
+    impact = _maintenance_task_impact(template, current_user, db)
+    matching_assets = db.scalars(
+        select(Asset).where(
+            Asset.owner_user_id == current_user.id,
+            Asset.asset_type == template.asset_type,
+        )
+    ).all()
+    matching_asset_ids = {asset.id for asset in matching_assets}
+
+    if matching_asset_ids:
+        schedules = db.scalars(
+            select(MaintenanceSchedule).where(MaintenanceSchedule.asset_id.in_(matching_asset_ids))
+        ).all()
+        for schedule in schedules:
+            if schedule.title.strip().lower() == template.task_name.strip().lower():
+                schedule.active = False
+
+        events = db.scalars(
+            select(MaintenanceEvent).where(MaintenanceEvent.asset_id.in_(matching_asset_ids))
+        ).all()
+        for event in events:
+            tasks = [part.strip() for part in event.event_type.split(',') if part.strip()]
+            kept_tasks = [task for task in tasks if task.lower() != template.task_name.strip().lower()]
+            if len(kept_tasks) == len(tasks):
+                continue
+            if not kept_tasks:
+                db.delete(event)
+            else:
+                event.event_type = ', '.join(kept_tasks)
+
+    db.delete(template)
+    db.commit()
+    return impact
 
 
 @router.put('/maintenance-tasks/rename')

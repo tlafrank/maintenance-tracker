@@ -204,6 +204,14 @@ class MaintenanceTaskUpdate(BaseModel):
     task_name: str
 
 
+class MaintenanceTaskDeleteImpact(BaseModel):
+    task_name: str
+    asset_type: str | None = None
+    affected_schedules: int
+    affected_history_records: int
+    deleted_history_records: int
+
+
 class DashboardItem(BaseModel):
     asset_id: int
     schedule_id: int
