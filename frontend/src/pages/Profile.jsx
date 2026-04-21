@@ -4,7 +4,7 @@ import { apiFetch } from '../api/client'
 
 const DISTANCE_UNITS = ['km', 'mi']
 
-export function ProfilePage() {
+export function ProfilePage({ onLogout }) {
   const [form, setForm] = useState({
     display_name: '',
     preferred_distance_unit: 'km',
@@ -111,6 +111,7 @@ export function ProfilePage() {
 
       <div className="actions">
         <button className="btn btn-primary" type="submit">Save profile</button>
+        <button className="btn btn-danger" type="button" onClick={onLogout}>Logout</button>
         <Link className="btn btn-outline-secondary" to="/dashboard">Cancel</Link>
       </div>
       </form>

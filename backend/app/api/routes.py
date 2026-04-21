@@ -1,10 +1,11 @@
 import logging
-import os
+import io
 from pathlib import Path
 from uuid import uuid4
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from PIL import Image, UnidentifiedImageError
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
@@ -48,6 +49,7 @@ auth_logger = logging.getLogger('app.auth')
 UPLOAD_DIRECTORY = Path('/tmp/maintenance-tracker/uploads/assets')
 ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_THUMBNAIL_DIMENSIONS = (1024, 1024)
 
 
 @router.post('/auth/register', response_model=UserOut)
@@ -245,14 +247,23 @@ async def upload_asset_thumbnail(
     if len(content) > MAX_IMAGE_BYTES:
         raise HTTPException(status_code=400, detail='Image must be 5MB or less.')
 
-    extension = os.path.splitext(file.filename or '')[1].lower()
-    if extension not in {'.jpg', '.jpeg', '.png', '.webp', '.gif'}:
-        extension = '.jpg'
+    try:
+        source_image = Image.open(io.BytesIO(content))
+    except UnidentifiedImageError as exc:
+        raise HTTPException(status_code=400, detail='Uploaded file is not a valid image.') from exc
+
+    optimized_image = source_image.convert('RGB')
+    optimized_image.thumbnail(MAX_THUMBNAIL_DIMENSIONS)
+    optimized_buffer = io.BytesIO()
+    optimized_image.save(optimized_buffer, format='WEBP', quality=82, optimize=True)
+    optimized_content = optimized_buffer.getvalue()
+
+    extension = '.webp'
 
     UPLOAD_DIRECTORY.mkdir(parents=True, exist_ok=True)
     filename = f'{asset.id}-{uuid4().hex}{extension}'
     saved_path = UPLOAD_DIRECTORY / filename
-    saved_path.write_bytes(content)
+    saved_path.write_bytes(optimized_content)
 
     _delete_existing_thumbnail(asset)
     asset.thumbnail_path = f'/uploads/assets/{filename}'

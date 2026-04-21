@@ -20,6 +20,7 @@ fieldset { border: 1px solid #d9dfea; border-radius: .35rem; margin: .25rem 0 .9
 .asset-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .5rem; }
 .asset-list-item { display: flex; align-items: center; gap: .6rem; border: 1px solid #d7dced; border-radius: .4rem; padding: .6rem .7rem; background: #fbfcff; }
 .asset-list-thumbnail { width: 56px; height: 56px; border-radius: .45rem; object-fit: cover; flex: 0 0 auto; }
+.asset-type-label { margin: .2rem 0 0; display: block; }
 .asset-header { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
 .asset-thumbnail { width: 120px; height: 120px; border-radius: .5rem; object-fit: cover; border: 1px solid #d7dced; }
 .asset-thumbnail-placeholder,

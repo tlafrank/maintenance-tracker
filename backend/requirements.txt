@@ -8,3 +8,4 @@ python-jose[cryptography]==3.4.0
 passlib==1.7.4
 python-multipart==0.0.20
 pydantic-settings==2.8.1
+Pillow==11.2.1

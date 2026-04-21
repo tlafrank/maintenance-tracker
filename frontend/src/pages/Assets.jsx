@@ -100,6 +100,17 @@ function formatReadingDate(isoDateString) {
   })
 }
 
+function formatLongDate(isoDateString) {
+  if (!isoDateString) return ''
+  const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
+  const normalizedDate = hasTimezone ? isoDateString : `${isoDateString}Z`
+  return new Date(normalizedDate).toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
 function formatReadingDateTime(isoDateString) {
   if (!isoDateString) return ''
   const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
@@ -166,7 +177,20 @@ function AssetThumbnail({ thumbnailPath, alt, className = 'asset-thumbnail' }) {
 
 export function AssetListPage() {
   const [assets, setAssets] = useState([])
-  useEffect(() => { apiFetch('/assets').then(setAssets) }, [])
+  const [assetTypes, setAssetTypes] = useState([])
+  const [selectedType, setSelectedType] = useState('all')
+
+  useEffect(() => {
+    Promise.all([apiFetch('/assets'), apiFetch('/asset-types')]).then(([assetResult, typeResult]) => {
+      setAssets(assetResult)
+      setAssetTypes(typeResult)
+    })
+  }, [])
+
+  const filteredAssets = selectedType === 'all'
+    ? assets
+    : assets.filter((assetItem) => assetItem.asset_type === selectedType)
+
   return (
     <div className="grid">
       <section className="card span-all">
@@ -174,16 +198,22 @@ export function AssetListPage() {
         <div className="equal-actions">
           <Link className="btn btn-outline-primary equal-action-btn" to="/assets/new">Add Asset</Link>
         </div>
+        <label htmlFor="asset-type-filter">Filter by asset type</label>
+        <select id="asset-type-filter" value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
+          <option value="all">All types</option>
+          {assetTypes.map((assetType) => <option key={assetType.id} value={assetType.name}>{assetType.name}</option>)}
+        </select>
       </section>
       <section className="card span-all">
         {assets.length === 0 && <p className="muted-text">No assets yet. Use Add Asset to get started.</p>}
+        {assets.length > 0 && filteredAssets.length === 0 && <p className="muted-text">No assets match this filter.</p>}
         <div className="asset-list">
-          {assets.map((assetItem) => (
+          {filteredAssets.map((assetItem) => (
             <Link key={assetItem.id} to={`/assets/${assetItem.id}`} className="asset-list-item">
               <AssetThumbnail thumbnailPath={assetItem.thumbnail_path} alt={`${assetItem.name} thumbnail`} className="asset-list-thumbnail" />
               <div>
                 <strong>{assetItem.name}</strong>
-                <span className="muted-text">{assetItem.asset_type}</span>
+                <p className="muted-text asset-type-label">{assetItem.asset_type}</p>
               </div>
             </Link>
           ))}
@@ -852,7 +882,7 @@ export function MaintenanceEventFormPage() {
       <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
       <label htmlFor="performed-date">Activity Date</label>
       <input id="performed-date" type="date" value={form.performed_date} onChange={(e) => setForm({ ...form, performed_date: e.target.value })} />
-      {form.performed_date && <p className="hint">{new Date(`${form.performed_date}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>}
+      {form.performed_date && <p className="hint">{formatLongDate(`${form.performed_date}T00:00:00`)}</p>}
       <label htmlFor="maintenance-notes">Notes</label>
       <textarea id="maintenance-notes" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
 
