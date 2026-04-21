@@ -522,6 +522,13 @@ export function AssetDetailPage() {
   const usageTypeLabel = usageLabel(asset?.service_trigger)
   const recentEvents = events.slice(0, 5)
 
+  async function deleteScheduledTask(scheduleId, scheduleTitle) {
+    const confirmed = window.confirm(`Delete scheduled maintenance task "${scheduleTitle}"?`)
+    if (!confirmed) return
+    await apiFetch(`/schedules/${scheduleId}`, { method: 'DELETE' })
+    refresh()
+  }
+
   function scheduleSortKey(schedule) {
     const lastMatchingEvent = events.find((event) => event.event_type.split(',').map((task) => task.trim().toLowerCase()).includes(schedule.title.trim().toLowerCase()))
     if (!lastMatchingEvent) return { priority: 0, outstandingScore: Number.NEGATIVE_INFINITY }
@@ -636,6 +643,11 @@ export function AssetDetailPage() {
               <p className="muted-text">{intervalSummary}</p>
               {dueSummary && <p className="muted-text">{dueSummary}</p>}
               <span className={`badge status-${status}`}>{status}</span>
+              <div className="actions">
+                <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => deleteScheduledTask(schedule.id, schedule.title)}>
+                  Delete Task
+                </button>
+              </div>
             </div>
           )
         })}
