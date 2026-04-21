@@ -365,7 +365,12 @@ def list_readings(asset_id: int, current_user: User = Depends(get_current_user),
 @router.get('/assets/{asset_id}/schedules', response_model=list[ScheduleOut])
 def list_schedules(asset_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _owned_asset(asset_id, current_user.id, db)
-    return db.scalars(select(MaintenanceSchedule).where(MaintenanceSchedule.asset_id == asset_id)).all()
+    return db.scalars(
+        select(MaintenanceSchedule).where(
+            MaintenanceSchedule.asset_id == asset_id,
+            MaintenanceSchedule.active.is_(True),
+        )
+    ).all()
 
 
 @router.post('/assets/{asset_id}/schedules', response_model=ScheduleOut)
