@@ -30,6 +30,18 @@ export function DashboardPage() {
     })
   }, [])
   const dueSoonWeeks = Math.max(1, Math.ceil(upcomingWindowDays / 7))
+  const groupedOverdue = data.overdue.reduce((acc, item) => {
+    const existing = acc.get(item.asset_id) || {
+      asset_id: item.asset_id,
+      asset_name: item.asset_name,
+      thumbnail_path: item.thumbnail_path,
+      tasks: [],
+    }
+    existing.tasks.push(item.schedule_title)
+    acc.set(item.asset_id, existing)
+    return acc
+  }, new Map())
+  const overdueByAsset = Array.from(groupedOverdue.values())
   const dueSoonByAsset = data.due_soon.reduce((acc, item) => {
     const existing = acc.get(item.asset_id) || {
       asset_id: item.asset_id,
@@ -48,10 +60,16 @@ export function DashboardPage() {
       <section className="card">
         <h3 className="h5">Overdue</h3>
         {data.overdue.length === 0 && <p className="muted-text">No overdue tasks 🎉</p>}
-        {data.overdue.map(i => (
-          <div key={i.schedule_id} className="dashboard-item-row">
-            <AssetThumbnail thumbnailPath={i.thumbnail_path} name={i.asset_name} />
-            <p>{i.asset_name}: {i.schedule_title}</p>
+        {overdueByAsset.map((item) => (
+          <div key={item.asset_id} className="upcoming-item">
+            <div>
+              <AssetThumbnail thumbnailPath={item.thumbnail_path} name={item.asset_name} />
+              <strong>{item.asset_name}</strong>
+              <p className="muted-text mb-0">{item.tasks.join(', ')}</p>
+            </div>
+            <Link className="btn btn-sm btn-outline-primary" to={`/assets/${item.asset_id}/maintenance-events/new?task=${encodeURIComponent(item.tasks.join(', '))}`}>
+              Record Activity
+            </Link>
           </div>
         ))}
       </section>

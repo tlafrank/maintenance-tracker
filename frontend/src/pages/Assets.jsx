@@ -471,7 +471,7 @@ export function AssetEditPage() {
       <input id="edit-asset-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={e => setSelectedImage(e.target.files?.[0] || null)} />
 
       <div className="actions">
-        <button className="btn btn-primary" type="submit">{isUploadingImage ? 'Saving image...' : 'Save service interval'}</button>
+        <button className="btn btn-primary" type="submit">{isUploadingImage ? 'Saving image...' : 'Save asset changes'}</button>
         <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
@@ -485,8 +485,6 @@ export function AssetDetailPage() {
   const [readings, setReadings] = useState([])
   const [schedules, setSchedules] = useState([])
   const [events, setEvents] = useState([])
-  const [thumbnailUploadError, setThumbnailUploadError] = useState('')
-  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false)
 
   async function refresh() {
     const [a, m, r, s, e] = await Promise.all([
@@ -508,22 +506,6 @@ export function AssetDetailPage() {
 
   if (!asset) return <p>Loading...</p>
 
-  async function uploadThumbnail(file) {
-    if (!file) return
-    setThumbnailUploadError('')
-    setIsUploadingThumbnail(true)
-    try {
-      const imageData = new FormData()
-      imageData.append('file', file)
-      const updatedAsset = await apiFetch(`/assets/${id}/thumbnail`, { method: 'POST', body: imageData })
-      setAsset(updatedAsset)
-    } catch (err) {
-      setThumbnailUploadError(err.message || 'Unable to upload image')
-    } finally {
-      setIsUploadingThumbnail(false)
-    }
-  }
-
   return (
     <div className="grid">
       <section className="card span-all">
@@ -532,18 +514,9 @@ export function AssetDetailPage() {
           <AssetThumbnail thumbnailPath={asset.thumbnail_path} alt={`${asset.name} thumbnail`} />
           <div>
             <h2>{asset.name} <Link className="muted-edit-link" to={`/assets/${id}/edit`}>(edit)</Link></h2>
-            <label htmlFor="asset-thumbnail-upload" className="hint">Update image</label>
-            <input
-              id="asset-thumbnail-upload"
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              onChange={(e) => uploadThumbnail(e.target.files?.[0] || null)}
-              disabled={isUploadingThumbnail}
-            />
-            {thumbnailUploadError && <p className="error">{thumbnailUploadError}</p>}
+            <p className="muted-text asset-type-label">{asset.asset_type}</p>
           </div>
         </div>
-        <p>{asset.asset_type}</p>
         {asset.notes && <p>{asset.notes}</p>}
       </section>
       <section className="card span-all">
