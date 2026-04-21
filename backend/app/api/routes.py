@@ -634,10 +634,46 @@ def update_maintenance_task(task_id: int, payload: MaintenanceTaskUpdate, curren
     template = db.get(MaintenanceTaskTemplate, task_id)
     if not template or template.owner_user_id != current_user.id:
         raise HTTPException(status_code=404, detail='Maintenance task not found')
+    previous_task_name = template.task_name.strip()
+    previous_asset_type = template.asset_type
     task_name = payload.task_name.strip()
     normalized_asset_type = payload.asset_type.strip() if payload.asset_type else None
     if not task_name:
         raise HTTPException(status_code=400, detail='Task name is required')
+    existing = db.scalar(
+        select(MaintenanceTaskTemplate).where(
+            MaintenanceTaskTemplate.owner_user_id == current_user.id,
+            MaintenanceTaskTemplate.task_name == task_name,
+            MaintenanceTaskTemplate.asset_type == normalized_asset_type,
+            MaintenanceTaskTemplate.id != template.id,
+        )
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail='Task already exists')
+
+    matching_assets = db.scalars(
+        select(Asset).where(
+            Asset.owner_user_id == current_user.id,
+            Asset.asset_type == previous_asset_type,
+        )
+    ).all()
+    matching_asset_ids = {asset.id for asset in matching_assets}
+    normalized_previous_name = previous_task_name.lower()
+    normalized_new_name = task_name.lower()
+
+    if matching_asset_ids and normalized_previous_name != normalized_new_name:
+        schedules = db.scalars(select(MaintenanceSchedule).where(MaintenanceSchedule.asset_id.in_(matching_asset_ids))).all()
+        for schedule in schedules:
+            if schedule.title.strip().lower() == normalized_previous_name:
+                schedule.title = task_name
+
+        events = db.scalars(select(MaintenanceEvent).where(MaintenanceEvent.asset_id.in_(matching_asset_ids))).all()
+        for event in events:
+            tasks = [part.strip() for part in event.event_type.split(',') if part.strip()]
+            replaced_tasks = [task_name if task.lower() == normalized_previous_name else task for task in tasks]
+            if tasks != replaced_tasks:
+                event.event_type = ', '.join(replaced_tasks)
+
     template.task_name = task_name
     template.asset_type = normalized_asset_type
     db.commit()

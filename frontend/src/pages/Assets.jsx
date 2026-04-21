@@ -848,13 +848,11 @@ export function MaintenanceEventFormPage() {
           apiFetch(`/assets/${id}/maintenance-events`),
         ])
         setAsset(assetResult)
-        const templateTaskNames = suggestions
-          .filter((suggestion) => suggestion.id !== null)
-          .map((suggestion) => suggestion.task_name)
-        const assetSpecificTaskNames = assetEvents
-          .flatMap((event) => event.event_type.split(',').map((task) => task.trim()))
-          .filter(Boolean)
-        const uniqueTaskNames = Array.from(new Set([...templateTaskNames, ...assetSpecificTaskNames]))
+        const uniqueTaskNames = Array.from(new Set(
+          suggestions
+            .filter((suggestion) => suggestion.id !== null)
+            .map((suggestion) => suggestion.task_name),
+        ))
         setTaskSuggestions(uniqueTaskNames)
         setExistingEvents(assetEvents)
         setMeters(meterResult)
@@ -1266,7 +1264,7 @@ export function ScheduleEditPage() {
       <p className="hint">Set time, service trigger usage, or both (whichever comes first).</p>
       <div className="actions">
         <button className="btn btn-primary" type="submit">Save service interval</button>
-        <button className="btn btn-outline-danger" type="button" onClick={deleteTask}>Delete task</button>
+        <button className="btn btn-outline-danger" type="button" onClick={deleteTask}>Delete</button>
         <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
