@@ -1,7 +1,9 @@
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router
 from app.core.config import settings
@@ -21,6 +23,10 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
+
+uploads_root = Path('/tmp/maintenance-tracker/uploads')
+uploads_root.mkdir(parents=True, exist_ok=True)
+app.mount('/uploads', StaticFiles(directory=uploads_root), name='uploads')
 
 
 @app.get('/health')

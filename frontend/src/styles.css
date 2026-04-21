@@ -18,9 +18,16 @@ fieldset { border: 1px solid #d9dfea; border-radius: .35rem; margin: .25rem 0 .9
 .equal-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: .5rem; }
 .equal-action-btn { flex: 1 1 220px; text-align: center; }
 .asset-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .5rem; }
-.asset-list-item { display: flex; flex-direction: column; gap: .15rem; border: 1px solid #d7dced; border-radius: .4rem; padding: .6rem .7rem; background: #fbfcff; }
+.asset-list-item { display: flex; align-items: center; gap: .6rem; border: 1px solid #d7dced; border-radius: .4rem; padding: .6rem .7rem; background: #fbfcff; }
+.asset-list-thumbnail { width: 56px; height: 56px; border-radius: .45rem; object-fit: cover; flex: 0 0 auto; }
+.asset-header { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
+.asset-thumbnail { width: 120px; height: 120px; border-radius: .5rem; object-fit: cover; border: 1px solid #d7dced; }
+.asset-thumbnail-placeholder,
+.dashboard-thumbnail-placeholder { display: flex; align-items: center; justify-content: center; font-size: .72rem; color: #667; background: #eef1f8; border: 1px dashed #c7cfdf; }
 .upcoming-list { display: flex; flex-direction: column; gap: .5rem; }
 .upcoming-item { display: flex; justify-content: space-between; align-items: center; gap: .75rem; border: 1px solid #d7dced; border-radius: .4rem; padding: .6rem .7rem; background: #fbfcff; }
+.dashboard-thumbnail { width: 48px; height: 48px; border-radius: .4rem; object-fit: cover; border: 1px solid #d7dced; margin-bottom: .25rem; }
+.dashboard-item-row { display: flex; align-items: center; gap: .6rem; }
 .action-button { min-width: 220px; text-align: center; flex: 1 1 220px; }
 .muted-edit-link { font-size: .9rem; font-weight: normal; color: #667; }
 .badges { display: flex; flex-wrap: wrap; gap: .35rem; margin: .35rem 0 .6rem; }

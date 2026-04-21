@@ -159,6 +159,11 @@ function Breadcrumbs({ items }) {
   )
 }
 
+function AssetThumbnail({ thumbnailPath, alt, className = 'asset-thumbnail' }) {
+  if (!thumbnailPath) return <div className={`${className} asset-thumbnail-placeholder`} aria-hidden="true">No image</div>
+  return <img className={className} src={`/api${thumbnailPath}`} alt={alt} />
+}
+
 export function AssetListPage() {
   const [assets, setAssets] = useState([])
   useEffect(() => { apiFetch('/assets').then(setAssets) }, [])
@@ -175,8 +180,11 @@ export function AssetListPage() {
         <div className="asset-list">
           {assets.map((assetItem) => (
             <Link key={assetItem.id} to={`/assets/${assetItem.id}`} className="asset-list-item">
-              <strong>{assetItem.name}</strong>
-              <span className="muted-text">{assetItem.asset_type}</span>
+              <AssetThumbnail thumbnailPath={assetItem.thumbnail_path} alt={`${assetItem.name} thumbnail`} className="asset-list-thumbnail" />
+              <div>
+                <strong>{assetItem.name}</strong>
+                <span className="muted-text">{assetItem.asset_type}</span>
+              </div>
             </Link>
           ))}
         </div>
@@ -191,6 +199,7 @@ export function AssetFormPage() {
   const [newAssetType, setNewAssetType] = useState('')
   const [isSavingAssetType, setIsSavingAssetType] = useState(false)
   const [error, setError] = useState('')
+  const [selectedImage, setSelectedImage] = useState(null)
   const [form, setForm] = useState({
     name: '',
     asset_type: '',
@@ -217,13 +226,18 @@ export function AssetFormPage() {
   async function submit(e) {
     e.preventDefault()
     setError('')
-    await apiFetch('/assets', {
+    const createdAsset = await apiFetch('/assets', {
       method: 'POST',
       body: JSON.stringify({
         ...form,
         year: form.year ? Number(form.year) : null,
       }),
     })
+    if (selectedImage) {
+      const imageData = new FormData()
+      imageData.append('file', selectedImage)
+      await apiFetch(`/assets/${createdAsset.id}/thumbnail`, { method: 'POST', body: imageData })
+    }
     navigate('/assets')
   }
 
@@ -296,6 +310,9 @@ export function AssetFormPage() {
         <label htmlFor="asset-notes">Notes</label>
         <textarea id="asset-notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={5} />
 
+        <label htmlFor="asset-image">Asset Image</label>
+        <input id="asset-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={e => setSelectedImage(e.target.files?.[0] || null)} />
+
         <button className="btn btn-primary" type="submit" disabled={!canSubmitAsset}>Save</button>
       </form>
 
@@ -319,6 +336,8 @@ export function AssetEditPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [error, setError] = useState('')
+  const [selectedImage, setSelectedImage] = useState(null)
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
   const [form, setForm] = useState({
     name: '',
     asset_type: '',
@@ -355,6 +374,12 @@ export function AssetEditPage() {
         year: form.year ? Number(form.year) : null,
       }),
     })
+    if (selectedImage) {
+      setIsUploadingImage(true)
+      const imageData = new FormData()
+      imageData.append('file', selectedImage)
+      await apiFetch(`/assets/${id}/thumbnail`, { method: 'POST', body: imageData })
+    }
     navigate(`/assets/${id}`)
   }
 
@@ -400,9 +425,11 @@ export function AssetEditPage() {
 
       <label htmlFor="edit-asset-notes">Notes</label>
       <textarea id="edit-asset-notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={5} />
+      <label htmlFor="edit-asset-image">Replace asset image</label>
+      <input id="edit-asset-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={e => setSelectedImage(e.target.files?.[0] || null)} />
 
       <div className="actions">
-        <button className="btn btn-primary" type="submit">Save service interval</button>
+        <button className="btn btn-primary" type="submit">{isUploadingImage ? 'Saving image...' : 'Save service interval'}</button>
         <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
@@ -417,6 +444,8 @@ export function AssetDetailPage() {
   const [schedules, setSchedules] = useState([])
   const [events, setEvents] = useState([])
   const [historySearch, setHistorySearch] = useState('')
+  const [thumbnailUploadError, setThumbnailUploadError] = useState('')
+  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false)
 
   async function refresh() {
     const [a, m, r, s, e] = await Promise.all([
@@ -445,11 +474,42 @@ export function AssetDetailPage() {
   }, [events, historySearch])
 
   if (!asset) return <p>Loading...</p>
+
+  async function uploadThumbnail(file) {
+    if (!file) return
+    setThumbnailUploadError('')
+    setIsUploadingThumbnail(true)
+    try {
+      const imageData = new FormData()
+      imageData.append('file', file)
+      const updatedAsset = await apiFetch(`/assets/${id}/thumbnail`, { method: 'POST', body: imageData })
+      setAsset(updatedAsset)
+    } catch (err) {
+      setThumbnailUploadError(err.message || 'Unable to upload image')
+    } finally {
+      setIsUploadingThumbnail(false)
+    }
+  }
+
   return (
     <div className="grid">
       <section className="card span-all">
         <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset.name }]} />
-        <h2>{asset.name} <Link className="muted-edit-link" to={`/assets/${id}/edit`}>(edit)</Link></h2>
+        <div className="asset-header">
+          <AssetThumbnail thumbnailPath={asset.thumbnail_path} alt={`${asset.name} thumbnail`} />
+          <div>
+            <h2>{asset.name} <Link className="muted-edit-link" to={`/assets/${id}/edit`}>(edit)</Link></h2>
+            <label htmlFor="asset-thumbnail-upload" className="hint">Update image</label>
+            <input
+              id="asset-thumbnail-upload"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={(e) => uploadThumbnail(e.target.files?.[0] || null)}
+              disabled={isUploadingThumbnail}
+            />
+            {thumbnailUploadError && <p className="error">{thumbnailUploadError}</p>}
+          </div>
+        </div>
         <p>{asset.asset_type}</p>
         {asset.notes && <p>{asset.notes}</p>}
       </section>

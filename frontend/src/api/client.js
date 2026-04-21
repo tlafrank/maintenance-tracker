@@ -2,7 +2,11 @@ const API_BASE = '/api'
 
 export async function apiFetch(path, options = {}) {
   const token = localStorage.getItem('token')
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  const headers = { ...(options.headers || {}) }
+  const isFormData = options.body instanceof FormData
+  if (!isFormData && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
+  }
   if (token) headers.Authorization = `Bearer ${token}`
 
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers })

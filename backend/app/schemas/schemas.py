@@ -47,6 +47,7 @@ class AssetBase(BaseModel):
     model: str | None = None
     year: int | None = None
     registration_or_serial: str | None = None
+    thumbnail_path: str | None = None
     notes: str | None = None
     service_trigger: str = 'distance'
 
@@ -204,6 +205,7 @@ class DashboardItem(BaseModel):
     asset_id: int
     schedule_id: int
     asset_name: str
+    thumbnail_path: str | None = None
     schedule_title: str
     status: str
 

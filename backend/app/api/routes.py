@@ -1,7 +1,10 @@
 import logging
+import os
+from pathlib import Path
+from uuid import uuid4
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
@@ -42,6 +45,9 @@ from app.services.due_logic import evaluate_schedule_status, latest_meter_map
 
 router = APIRouter()
 auth_logger = logging.getLogger('app.auth')
+UPLOAD_DIRECTORY = Path('/tmp/maintenance-tracker/uploads/assets')
+ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
 @router.post('/auth/register', response_model=UserOut)
@@ -164,6 +170,14 @@ def _owned_asset(asset_id: int, user_id: int, db: Session) -> Asset:
     return asset
 
 
+def _delete_existing_thumbnail(asset: Asset):
+    if not asset.thumbnail_path:
+        return
+    existing_path = Path('/tmp/maintenance-tracker') / asset.thumbnail_path.lstrip('/')
+    if existing_path.exists():
+        existing_path.unlink()
+
+
 def _validate_service_interval(interval_days: int | None, usage_interval: float | None):
     if interval_days is None and usage_interval is None:
         raise HTTPException(status_code=400, detail='Service interval requires time, service trigger usage, or both.')
@@ -209,6 +223,39 @@ def update_asset(asset_id: int, payload: AssetUpdate, current_user: User = Depen
         raise HTTPException(status_code=400, detail='Select a valid asset type')
     for key, value in payload.model_dump().items():
         setattr(asset, key, value)
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+@router.post('/assets/{asset_id}/thumbnail', response_model=AssetOut)
+async def upload_asset_thumbnail(
+    asset_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    asset = _owned_asset(asset_id, current_user.id, db)
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail='Upload a JPG, PNG, WEBP, or GIF image.')
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail='Uploaded image is empty.')
+    if len(content) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail='Image must be 5MB or less.')
+
+    extension = os.path.splitext(file.filename or '')[1].lower()
+    if extension not in {'.jpg', '.jpeg', '.png', '.webp', '.gif'}:
+        extension = '.jpg'
+
+    UPLOAD_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    filename = f'{asset.id}-{uuid4().hex}{extension}'
+    saved_path = UPLOAD_DIRECTORY / filename
+    saved_path.write_bytes(content)
+
+    _delete_existing_thumbnail(asset)
+    asset.thumbnail_path = f'/uploads/assets/{filename}'
     db.commit()
     db.refresh(asset)
     return asset
@@ -610,6 +657,7 @@ def dashboard(current_user: User = Depends(get_current_user), db: Session = Depe
                 asset_id=asset.id,
                 schedule_id=schedule.id,
                 asset_name=asset.name,
+                thumbnail_path=asset.thumbnail_path,
                 schedule_title=schedule.title,
                 status=status_value,
             )
