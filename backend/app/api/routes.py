@@ -468,6 +468,19 @@ def create_event(asset_id: int, payload: MaintenanceEventCreate, current_user: U
         completion_meter_value=payload.completion_meter_value,
     )
     db.add(event)
+    event_tasks = [task.strip() for task in payload.event_type.split(',') if task.strip()]
+    existing_templates = db.scalars(
+        select(MaintenanceTaskTemplate).where(
+            MaintenanceTaskTemplate.owner_user_id == current_user.id,
+            MaintenanceTaskTemplate.asset_type == asset.asset_type,
+        )
+    ).all()
+    existing_task_names = {template.task_name.strip().lower() for template in existing_templates}
+    for task_name in event_tasks:
+        if task_name.lower() in existing_task_names:
+            continue
+        db.add(MaintenanceTaskTemplate(owner_user_id=current_user.id, asset_type=asset.asset_type, task_name=task_name))
+        existing_task_names.add(task_name.lower())
     if payload.completion_meter_value is not None:
         meter = db.scalar(select(Meter).where(Meter.asset_id == asset_id).order_by(desc(Meter.id)))
         if not meter:
@@ -523,9 +536,33 @@ def update_event(event_id: int, payload: MaintenanceEventCreate, current_user: U
             reading_value=payload.completion_meter_value,
             notes='Auto-captured from maintenance history update',
         ))
+    event_tasks = [task.strip() for task in payload.event_type.split(',') if task.strip()]
+    existing_templates = db.scalars(
+        select(MaintenanceTaskTemplate).where(
+            MaintenanceTaskTemplate.owner_user_id == current_user.id,
+            MaintenanceTaskTemplate.asset_type == asset.asset_type,
+        )
+    ).all()
+    existing_task_names = {template.task_name.strip().lower() for template in existing_templates}
+    for task_name in event_tasks:
+        if task_name.lower() in existing_task_names:
+            continue
+        db.add(MaintenanceTaskTemplate(owner_user_id=current_user.id, asset_type=asset.asset_type, task_name=task_name))
+        existing_task_names.add(task_name.lower())
     db.commit()
     db.refresh(event)
     return event
+
+
+@router.delete('/maintenance-events/{event_id}')
+def delete_event(event_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    event = db.get(MaintenanceEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail='Maintenance event not found')
+    _owned_asset(event.asset_id, current_user.id, db)
+    db.delete(event)
+    db.commit()
+    return {'ok': True}
 
 
 @router.get('/maintenance-activities', response_model=list[MaintenanceActivitySuggestion])

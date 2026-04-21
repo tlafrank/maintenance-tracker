@@ -522,13 +522,6 @@ export function AssetDetailPage() {
   const usageTypeLabel = usageLabel(asset?.service_trigger)
   const recentEvents = events.slice(0, 5)
 
-  async function deleteScheduledTask(scheduleId, scheduleTitle) {
-    const confirmed = window.confirm(`Delete scheduled maintenance task "${scheduleTitle}"?`)
-    if (!confirmed) return
-    await apiFetch(`/schedules/${scheduleId}`, { method: 'DELETE' })
-    refresh()
-  }
-
   function scheduleSortKey(schedule) {
     const lastMatchingEvent = events.find((event) => event.event_type.split(',').map((task) => task.trim().toLowerCase()).includes(schedule.title.trim().toLowerCase()))
     if (!lastMatchingEvent) return { priority: 0, outstandingScore: Number.NEGATIVE_INFINITY }
@@ -643,11 +636,6 @@ export function AssetDetailPage() {
               <p className="muted-text">{intervalSummary}</p>
               {dueSummary && <p className="muted-text">{dueSummary}</p>}
               <span className={`badge status-${status}`}>{status}</span>
-              <div className="actions">
-                <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => deleteScheduledTask(schedule.id, schedule.title)}>
-                  Delete Task
-                </button>
-              </div>
             </div>
           )
         })}
@@ -847,7 +835,6 @@ export function MaintenanceEventFormPage() {
   const [form, setForm] = useState({ completion_meter_value: '', notes: '', performed_date: localDateInputValue() })
   const [taskInput, setTaskInput] = useState('')
   const [tasks, setTasks] = useState([])
-  const [isTaskInputLocked, setIsTaskInputLocked] = useState(false)
   const [taskSuggestions, setTaskSuggestions] = useState([])
   const [existingEvents, setExistingEvents] = useState([])
   const [error, setError] = useState('')
@@ -881,7 +868,6 @@ export function MaintenanceEventFormPage() {
       const event = events.find((candidate) => String(candidate.id) === String(editEventId))
       if (!event) return
       setTasks(event.event_type.split(',').map((task) => task.trim()).filter(Boolean))
-      setIsTaskInputLocked(Boolean(event.event_type?.trim()))
       setForm({
         completion_meter_value: event.completion_meter_value ?? '',
         notes: event.notes ?? '',
@@ -897,7 +883,6 @@ export function MaintenanceEventFormPage() {
       if (incomingTasks.length === 0) return current
       const existing = new Set(current.map((task) => task.toLowerCase()))
       const additions = incomingTasks.filter((task) => !existing.has(task.toLowerCase()))
-      if (additions.length) setIsTaskInputLocked(true)
       return additions.length ? [...current, ...additions] : current
     })
   }, [prefillTask, editEventId])
@@ -910,7 +895,6 @@ export function MaintenanceEventFormPage() {
       return [...current, trimmed]
     })
     setTaskInput('')
-    setIsTaskInputLocked(true)
   }
 
   function commitTaskFromInput() {
@@ -951,6 +935,20 @@ export function MaintenanceEventFormPage() {
         ...payload,
       }),
     })
+    const knownTaskNames = new Set(taskSuggestions.map((task) => task.toLowerCase()))
+    const newTaskNames = mergedTasks.filter((task) => !knownTaskNames.has(task.toLowerCase()))
+    await Promise.all(newTaskNames.map((taskName) => apiFetch('/maintenance-tasks', {
+      method: 'POST',
+      body: JSON.stringify({ task_name: taskName, asset_type: asset?.asset_type }),
+    }).catch(() => null)))
+    navigate(`/assets/${id}`)
+  }
+
+  async function deleteActivity() {
+    if (!editEventId) return
+    const confirmed = window.confirm('Delete this maintenance activity?')
+    if (!confirmed) return
+    await apiFetch(`/maintenance-events/${editEventId}`, { method: 'DELETE' })
     navigate(`/assets/${id}`)
   }
 
@@ -960,7 +958,7 @@ export function MaintenanceEventFormPage() {
   return (
     <form onSubmit={submit} className="card narrow-card">
       <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Record Maintenance Activity' }]} />
-      <h2>Record Maintenance Activity</h2>
+      <h2>{editEventId ? 'Edit Maintenance Activity' : 'Record Maintenance Activity'}</h2>
       {asset && <p className="hint">Capture completed work for <strong>{asset.name}</strong>.</p>}
       {error && <p className="error">{error}</p>}
 
@@ -987,7 +985,6 @@ export function MaintenanceEventFormPage() {
           id="task-input"
           list="task-options"
           value={taskInput}
-          disabled={isTaskInputLocked}
           onChange={(e) => {
             const nextValue = e.target.value
             setTaskInput(nextValue)
@@ -1008,7 +1005,6 @@ export function MaintenanceEventFormPage() {
           }}
         />
       </div>
-      {isTaskInputLocked && <p className="hint">Delete a task pill to enter another task.</p>}
       <datalist id="task-options">
         {taskSuggestions
           .filter((task) => !tasks.some((selectedTask) => selectedTask.toLowerCase() === task.toLowerCase()))
@@ -1030,6 +1026,7 @@ export function MaintenanceEventFormPage() {
 
       <div className="actions">
         <button className="btn btn-primary" type="submit" disabled={tasks.length === 0 && !taskInput.trim()}>{editEventId ? 'Update Activity' : 'Record Maintenance Activity'}</button>
+        {editEventId && <button className="btn btn-outline-danger" type="button" onClick={deleteActivity}>Delete activity</button>}
         <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
