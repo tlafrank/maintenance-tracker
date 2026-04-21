@@ -13,7 +13,7 @@ class Token(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
-    display_name: str
+    display_name: str | None = None
 
 
 class UserOut(BaseModel):
@@ -47,6 +47,7 @@ class AssetBase(BaseModel):
     model: str | None = None
     year: int | None = None
     registration_or_serial: str | None = None
+    thumbnail_path: str | None = None
     notes: str | None = None
     service_trigger: str = 'distance'
 
@@ -184,6 +185,7 @@ class MaintenanceActivitySuggestion(BaseModel):
 
 class MaintenanceTaskSuggestion(BaseModel):
     id: int | None = None
+    asset_type: str | None = None
     task_name: str
 
 
@@ -193,17 +195,28 @@ class MaintenanceTaskRename(BaseModel):
 
 
 class MaintenanceTaskCreate(BaseModel):
+    asset_type: str | None = None
     task_name: str
 
 
 class MaintenanceTaskUpdate(BaseModel):
+    asset_type: str | None = None
     task_name: str
+
+
+class MaintenanceTaskDeleteImpact(BaseModel):
+    task_name: str
+    asset_type: str | None = None
+    affected_schedules: int
+    affected_history_records: int
+    deleted_history_records: int
 
 
 class DashboardItem(BaseModel):
     asset_id: int
     schedule_id: int
     asset_name: str
+    thumbnail_path: str | None = None
     schedule_title: str
     status: str
 
@@ -225,7 +238,6 @@ class DashboardOut(BaseModel):
 
 
 class UserProfileUpdate(BaseModel):
-    display_name: str
     preferred_distance_unit: str = 'km'
     upcoming_task_window_days: int = 14
     current_password: str | None = None

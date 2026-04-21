@@ -100,6 +100,18 @@ function formatReadingDate(isoDateString) {
   })
 }
 
+function formatLongDate(isoDateString) {
+  if (!isoDateString) return ''
+  const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
+  const normalizedDate = hasTimezone ? isoDateString : `${isoDateString}Z`
+  return new Date(normalizedDate).toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+
 function formatReadingDateTime(isoDateString) {
   if (!isoDateString) return ''
   const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
@@ -129,10 +141,20 @@ function intervalPeriodLabel(intervalDays) {
 
 function humanDueText(daysLeft) {
   if (daysLeft === null || daysLeft === undefined || Number.isNaN(daysLeft)) return 'No due date'
-  if (daysLeft === -14) return 'Two weeks past due'
-  if (daysLeft < -14) return `${Math.abs(daysLeft)} days past due`
-  if (daysLeft < -6) return 'Overdue by one week'
-  if (daysLeft < 0) return `${Math.abs(daysLeft)} days past due`
+  if (daysLeft < 0) {
+    const overdueDays = Math.abs(daysLeft)
+    if (overdueDays < 14) return `Overdue by ${overdueDays} day${overdueDays === 1 ? '' : 's'}`
+    if (overdueDays < 60) {
+      const weeks = Math.ceil(overdueDays / 7)
+      return `Overdue by ${weeks} week${weeks === 1 ? '' : 's'}`
+    }
+    if (overdueDays < 730) {
+      const months = Math.ceil(overdueDays / 30)
+      return `Overdue by ${months} month${months === 1 ? '' : 's'}`
+    }
+    const years = Math.ceil(overdueDays / 365)
+    return `Overdue by ${years} year${years === 1 ? '' : 's'}`
+  }
   if (daysLeft === 0) return 'Due today'
   if (daysLeft <= 7) return 'Due next week'
   if (daysLeft <= 30) return `Due in ${Math.ceil(daysLeft / 7)} weeks`
@@ -144,6 +166,24 @@ function usageRemainingText(remainingUsage, serviceTrigger) {
   if (remainingUsage === null || remainingUsage === undefined || Number.isNaN(remainingUsage)) return ''
   if (remainingUsage <= 0) return `${Math.abs(Math.round(remainingUsage)).toLocaleString('en-US')} ${usageUnit(serviceTrigger)} overdue`
   return `${Math.round(remainingUsage).toLocaleString('en-US')} ${usageUnit(serviceTrigger)}`
+}
+
+function highestServiceValue({ readings = [], events = [], meterValue = null }) {
+  const values = []
+  readings.forEach((reading) => {
+    if (reading?.reading_value !== null && reading?.reading_value !== undefined && !Number.isNaN(Number(reading.reading_value))) {
+      values.push(Number(reading.reading_value))
+    }
+  })
+  events.forEach((event) => {
+    if (event?.completion_meter_value !== null && event?.completion_meter_value !== undefined && !Number.isNaN(Number(event.completion_meter_value))) {
+      values.push(Number(event.completion_meter_value))
+    }
+  })
+  if (meterValue !== null && meterValue !== undefined && !Number.isNaN(Number(meterValue))) {
+    values.push(Number(meterValue))
+  }
+  return values.length ? Math.max(...values) : null
 }
 
 function Breadcrumbs({ items }) {
@@ -159,9 +199,27 @@ function Breadcrumbs({ items }) {
   )
 }
 
+function AssetThumbnail({ thumbnailPath, alt, className = 'asset-thumbnail' }) {
+  if (!thumbnailPath) return <div className={`${className} asset-thumbnail-placeholder`} aria-hidden="true">No image</div>
+  return <img className={className} src={`/api${thumbnailPath}`} alt={alt} />
+}
+
 export function AssetListPage() {
   const [assets, setAssets] = useState([])
-  useEffect(() => { apiFetch('/assets').then(setAssets) }, [])
+  const [assetTypes, setAssetTypes] = useState([])
+  const [selectedType, setSelectedType] = useState('all')
+
+  useEffect(() => {
+    Promise.all([apiFetch('/assets'), apiFetch('/asset-types')]).then(([assetResult, typeResult]) => {
+      setAssets(assetResult)
+      setAssetTypes(typeResult)
+    })
+  }, [])
+
+  const filteredAssets = selectedType === 'all'
+    ? assets
+    : assets.filter((assetItem) => assetItem.asset_type === selectedType)
+
   return (
     <div className="grid">
       <section className="card span-all">
@@ -169,14 +227,23 @@ export function AssetListPage() {
         <div className="equal-actions">
           <Link className="btn btn-outline-primary equal-action-btn" to="/assets/new">Add Asset</Link>
         </div>
+        <label htmlFor="asset-type-filter">Filter by asset type</label>
+        <select id="asset-type-filter" value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
+          <option value="all">All types</option>
+          {assetTypes.map((assetType) => <option key={assetType.id} value={assetType.name}>{assetType.name}</option>)}
+        </select>
       </section>
       <section className="card span-all">
         {assets.length === 0 && <p className="muted-text">No assets yet. Use Add Asset to get started.</p>}
+        {assets.length > 0 && filteredAssets.length === 0 && <p className="muted-text">No assets match this filter.</p>}
         <div className="asset-list">
-          {assets.map((assetItem) => (
+          {filteredAssets.map((assetItem) => (
             <Link key={assetItem.id} to={`/assets/${assetItem.id}`} className="asset-list-item">
-              <strong>{assetItem.name}</strong>
-              <span className="muted-text">{assetItem.asset_type}</span>
+              <AssetThumbnail thumbnailPath={assetItem.thumbnail_path} alt={`${assetItem.name} thumbnail`} className="asset-list-thumbnail" />
+              <div>
+                <strong>{assetItem.name}</strong>
+                <p className="muted-text asset-type-label">{assetItem.asset_type}</p>
+              </div>
             </Link>
           ))}
         </div>
@@ -191,6 +258,7 @@ export function AssetFormPage() {
   const [newAssetType, setNewAssetType] = useState('')
   const [isSavingAssetType, setIsSavingAssetType] = useState(false)
   const [error, setError] = useState('')
+  const [selectedImage, setSelectedImage] = useState(null)
   const [form, setForm] = useState({
     name: '',
     asset_type: '',
@@ -217,13 +285,18 @@ export function AssetFormPage() {
   async function submit(e) {
     e.preventDefault()
     setError('')
-    await apiFetch('/assets', {
+    const createdAsset = await apiFetch('/assets', {
       method: 'POST',
       body: JSON.stringify({
         ...form,
         year: form.year ? Number(form.year) : null,
       }),
     })
+    if (selectedImage) {
+      const imageData = new FormData()
+      imageData.append('file', selectedImage)
+      await apiFetch(`/assets/${createdAsset.id}/thumbnail`, { method: 'POST', body: imageData })
+    }
     navigate('/assets')
   }
 
@@ -296,6 +369,9 @@ export function AssetFormPage() {
         <label htmlFor="asset-notes">Notes</label>
         <textarea id="asset-notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={5} />
 
+        <label htmlFor="asset-image">Asset Image</label>
+        <input id="asset-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={e => setSelectedImage(e.target.files?.[0] || null)} />
+
         <button className="btn btn-primary" type="submit" disabled={!canSubmitAsset}>Save</button>
       </form>
 
@@ -319,6 +395,8 @@ export function AssetEditPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [error, setError] = useState('')
+  const [selectedImage, setSelectedImage] = useState(null)
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
   const [form, setForm] = useState({
     name: '',
     asset_type: '',
@@ -355,6 +433,12 @@ export function AssetEditPage() {
         year: form.year ? Number(form.year) : null,
       }),
     })
+    if (selectedImage) {
+      setIsUploadingImage(true)
+      const imageData = new FormData()
+      imageData.append('file', selectedImage)
+      await apiFetch(`/assets/${id}/thumbnail`, { method: 'POST', body: imageData })
+    }
     navigate(`/assets/${id}`)
   }
 
@@ -400,9 +484,11 @@ export function AssetEditPage() {
 
       <label htmlFor="edit-asset-notes">Notes</label>
       <textarea id="edit-asset-notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={5} />
+      <label htmlFor="edit-asset-image">Replace asset image</label>
+      <input id="edit-asset-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={e => setSelectedImage(e.target.files?.[0] || null)} />
 
       <div className="actions">
-        <button className="btn btn-primary" type="submit">Save service interval</button>
+        <button className="btn btn-primary" type="submit">{isUploadingImage ? 'Saving image...' : 'Save asset changes'}</button>
         <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
@@ -416,7 +502,6 @@ export function AssetDetailPage() {
   const [readings, setReadings] = useState([])
   const [schedules, setSchedules] = useState([])
   const [events, setEvents] = useState([])
-  const [historySearch, setHistorySearch] = useState('')
 
   async function refresh() {
     const [a, m, r, s, e] = await Promise.all([
@@ -433,24 +518,51 @@ export function AssetDetailPage() {
   const latestReading = readings[0]
   const compatibleMeters = useMemo(() => meters.filter((meter) => meter.service_trigger === asset?.service_trigger), [meters, asset])
   const latestReadingMeter = meters.find((meter) => meter.id === latestReading?.meter_id)
+  const currentServiceValue = highestServiceValue({ readings, events, meterValue: latestReadingMeter?.current_value })
   const usageTypeLabel = usageLabel(asset?.service_trigger)
-  const filteredEvents = useMemo(() => {
-    const normalizedSearch = historySearch.trim().toLowerCase()
-    if (!normalizedSearch) return events
-    const searchTerms = normalizedSearch.split(/\s+/).filter(Boolean)
-    return events.filter((event) => {
-      const searchableContent = `${event.event_type || ''} ${event.notes || ''}`.toLowerCase()
-      return searchTerms.every((term) => searchableContent.includes(term))
-    })
-  }, [events, historySearch])
+  const recentEvents = events.slice(0, 5)
+
+  function scheduleSortKey(schedule) {
+    const lastMatchingEvent = events.find((event) => event.event_type.split(',').map((task) => task.trim().toLowerCase()).includes(schedule.title.trim().toLowerCase()))
+    if (!lastMatchingEvent) return { priority: 0, outstandingScore: Number.NEGATIVE_INFINITY }
+
+    const referenceDate = new Date(lastMatchingEvent.performed_at)
+    const dueDate = schedule.interval_days ? new Date(referenceDate.getTime() + (schedule.interval_days * 24 * 60 * 60 * 1000)) : null
+    const daysLeft = dueDate ? Math.ceil((dueDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null
+    const usageInterval = asset.service_trigger === 'distance'
+      ? schedule.interval_distance
+      : asset.service_trigger === 'hours'
+        ? schedule.interval_hours
+        : schedule.interval_cycles
+    const currentReading = latestReading?.reading_value !== null && latestReading?.reading_value !== undefined
+      ? Number(latestReading.reading_value)
+      : null
+    const usageBaseline = lastMatchingEvent?.completion_meter_value !== null && lastMatchingEvent?.completion_meter_value !== undefined
+      ? Number(lastMatchingEvent.completion_meter_value)
+      : 0
+    const usageDueAt = usageInterval !== null && usageInterval !== undefined ? usageBaseline + Number(usageInterval) : null
+    const usageRemaining = usageDueAt !== null && currentReading !== null ? usageDueAt - currentReading : null
+
+    const isOverdue = (daysLeft !== null && daysLeft < 0) || (usageRemaining !== null && usageRemaining <= 0)
+    const isUpcoming = (daysLeft !== null && daysLeft >= 0 && daysLeft <= 14) || (usageRemaining !== null && usageInterval && usageRemaining > 0 && usageRemaining <= Number(usageInterval) * 0.2)
+    const priority = isOverdue ? 0 : isUpcoming ? 1 : 2
+    const outstandingScore = Math.min(daysLeft ?? Number.POSITIVE_INFINITY, usageRemaining ?? Number.POSITIVE_INFINITY)
+    return { priority, outstandingScore }
+  }
 
   if (!asset) return <p>Loading...</p>
+
   return (
     <div className="grid">
       <section className="card span-all">
         <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset.name }]} />
-        <h2>{asset.name} <Link className="muted-edit-link" to={`/assets/${id}/edit`}>(edit)</Link></h2>
-        <p>{asset.asset_type}</p>
+        <div className="asset-header">
+          <AssetThumbnail thumbnailPath={asset.thumbnail_path} alt={`${asset.name} thumbnail`} />
+          <div>
+            <h2>{asset.name} <Link className="muted-edit-link" to={`/assets/${id}/edit`}>(edit)</Link></h2>
+            <p className="muted-text asset-type-label">{asset.asset_type}</p>
+          </div>
+        </div>
         {asset.notes && <p>{asset.notes}</p>}
       </section>
       <section className="card span-all">
@@ -464,10 +576,10 @@ export function AssetDetailPage() {
       </section>
       <section className="card">
         <h3>Current Reading</h3>
-        {latestReading ? (
+        {currentServiceValue !== null ? (
           <div className="meter-highlight">
-            <p><strong>{`Current ${usageLabel(asset.service_trigger)}`}:</strong> {formatIntervalValue(latestReading.reading_value)} {latestReadingMeter?.unit || usageUnit(asset.service_trigger)}</p>
-            <p className="muted-text">{formatReadingDate(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>
+            <p><strong>{`Current ${usageLabel(asset.service_trigger)}`}:</strong> {formatIntervalValue(currentServiceValue)} {latestReadingMeter?.unit || usageUnit(asset.service_trigger)}</p>
+            {latestReading && <p className="muted-text">{formatReadingDate(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>}
           </div>
         ) : (
           <p>No readings recorded yet.</p>
@@ -475,7 +587,12 @@ export function AssetDetailPage() {
       </section>
       <section className="card">
         <h3>Scheduled Maintenance Tasks</h3>
-        {schedules.map((schedule) => {
+        {[...schedules].sort((leftSchedule, rightSchedule) => {
+          const left = scheduleSortKey(leftSchedule)
+          const right = scheduleSortKey(rightSchedule)
+          if (left.priority !== right.priority) return left.priority - right.priority
+          return left.outstandingScore - right.outstandingScore
+        }).map((schedule) => {
           const lastMatchingEvent = events.find((event) => event.event_type.split(',').map((task) => task.trim().toLowerCase()).includes(schedule.title.trim().toLowerCase()))
           const referenceDate = lastMatchingEvent ? new Date(lastMatchingEvent.performed_at) : new Date(asset.created_at)
           const dueDate = schedule.interval_days ? new Date(referenceDate.getTime() + (schedule.interval_days * 24 * 60 * 60 * 1000)) : null
@@ -485,9 +602,7 @@ export function AssetDetailPage() {
             : asset.service_trigger === 'hours'
               ? schedule.interval_hours
               : schedule.interval_cycles
-          const currentReading = latestReading?.reading_value !== null && latestReading?.reading_value !== undefined
-            ? Number(latestReading.reading_value)
-            : null
+          const currentReading = currentServiceValue
           const usageBaseline = lastMatchingEvent?.completion_meter_value !== null && lastMatchingEvent?.completion_meter_value !== undefined
             ? Number(lastMatchingEvent.completion_meter_value)
             : 0
@@ -497,12 +612,16 @@ export function AssetDetailPage() {
           const isTimeOverdue = daysLeft !== null && !Number.isNaN(daysLeft) && daysLeft < 0
           const isTimeUpcoming = daysLeft !== null && !Number.isNaN(daysLeft) && daysLeft >= 0 && daysLeft <= 14
           const isUsageUpcoming = usageRemaining !== null && usageRemaining > 0 && usageInterval && usageRemaining <= Number(usageInterval) * 0.2
-          const status = (isTimeOverdue || isUsageOverdue) ? 'overdue' : ((isTimeUpcoming || isUsageUpcoming) ? 'upcoming' : 'future')
+          const status = !lastMatchingEvent
+            ? 'overdue'
+            : (isTimeOverdue || isUsageOverdue) ? 'overdue' : ((isTimeUpcoming || isUsageUpcoming) ? 'upcoming' : 'future')
           const intervalParts = [intervalPeriodLabel(schedule.interval_days)]
           if (usageInterval) intervalParts.push(`Every ${formatIntervalValue(usageInterval)} ${usageUnit(asset.service_trigger)}`)
           const intervalSummary = intervalParts.filter(Boolean).join(' | ')
           let dueSummary = ''
-          if (daysLeft !== null && usageRemaining !== null) {
+          if (!lastMatchingEvent) {
+            dueSummary = 'Never been conducted'
+          } else if (daysLeft !== null && usageRemaining !== null) {
             dueSummary = `${humanDueText(daysLeft)} or ${usageRemainingText(usageRemaining, asset.service_trigger)}`
           } else if (daysLeft !== null) {
             dueSummary = humanDueText(daysLeft)
@@ -522,15 +641,9 @@ export function AssetDetailPage() {
         })}
       </section>
       <section className="card">
-        <h3>Maintenance history</h3>
-        <input
-          aria-label="Search maintenance history"
-          placeholder="Search tasks or notes"
-          value={historySearch}
-          onChange={(e) => setHistorySearch(e.target.value)}
-        />
-        {filteredEvents.length === 0 && <p className="muted-text">No maintenance activities match your search.</p>}
-        {filteredEvents.map((ev) => (
+        <h3>Recent maintenance history</h3>
+        {recentEvents.length === 0 && <p className="muted-text">No maintenance activities recorded yet.</p>}
+        {recentEvents.map((ev) => (
           <div key={ev.id} className="meter-highlight">
             <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDate(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `@ ${formatIntervalValue(ev.completion_meter_value)} ${usageUnit(asset.service_trigger)}` : ''}</p>
             <div className="badges">
@@ -542,8 +655,80 @@ export function AssetDetailPage() {
             {ev.notes && <p className="muted-text">{ev.notes}</p>}
           </div>
         ))}
+        <p className="hint">
+          <Link to={`/assets/${id}/history`}>View full maintenance history</Link>
+        </p>
       </section>
     </div>
+  )
+}
+
+export function AssetHistoryPage() {
+  const { id } = useParams()
+  const [asset, setAsset] = useState(null)
+  const [events, setEvents] = useState([])
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const pageSize = 20
+
+  useEffect(() => {
+    Promise.all([apiFetch(`/assets/${id}`), apiFetch(`/assets/${id}/maintenance-events`)]).then(([assetResult, eventsResult]) => {
+      setAsset(assetResult)
+      setEvents(eventsResult)
+    })
+  }, [id])
+
+  const filteredEvents = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase()
+    if (!normalizedSearch) return events
+    const searchTerms = normalizedSearch.split(/\s+/).filter(Boolean)
+    return events.filter((event) => {
+      const searchableContent = `${event.event_type || ''} ${event.notes || ''}`.toLowerCase()
+      return searchTerms.every((term) => searchableContent.includes(term))
+    })
+  }, [events, search])
+
+  const totalPages = Math.max(1, Math.ceil(filteredEvents.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const pagedEvents = filteredEvents.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
+  useEffect(() => { setPage(1) }, [search, id])
+
+  return (
+    <section className="card span-all">
+      <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Full maintenance history' }]} />
+      <h3>Full maintenance history</h3>
+      <input
+        aria-label="Search maintenance history"
+        placeholder="Search tasks or notes"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      {pagedEvents.length === 0 && <p className="muted-text">No maintenance activities match your search.</p>}
+      {pagedEvents.map((ev) => (
+        <div key={ev.id} className="meter-highlight">
+          <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDate(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `@ ${formatIntervalValue(ev.completion_meter_value)} ${usageUnit(asset?.service_trigger)}` : ''}</p>
+          <div className="badges">
+            {ev.event_type.split(',').map((task) => {
+              const trimmedTask = task.trim()
+              return trimmedTask ? <span key={`${ev.id}-${trimmedTask}`} className="badge">{trimmedTask}</span> : null
+            })}
+          </div>
+          {ev.notes && <p className="muted-text">{ev.notes}</p>}
+        </div>
+      ))}
+      {totalPages > 1 && (
+        <div className="actions">
+          <button type="button" className="btn btn-outline-secondary" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+            Previous
+          </button>
+          <span className="hint">{`Page ${currentPage} of ${totalPages}`}</span>
+          <button type="button" className="btn btn-outline-secondary" disabled={currentPage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>
+            Next
+          </button>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -651,13 +836,25 @@ export function MaintenanceEventFormPage() {
   const [taskInput, setTaskInput] = useState('')
   const [tasks, setTasks] = useState([])
   const [taskSuggestions, setTaskSuggestions] = useState([])
+  const [existingEvents, setExistingEvents] = useState([])
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([apiFetch(`/assets/${id}`), apiFetch('/maintenance-tasks'), apiFetch(`/assets/${id}/meters`)])
-      .then(([assetResult, suggestions, meterResult]) => {
+    apiFetch(`/assets/${id}`)
+      .then(async (assetResult) => {
+        const [suggestions, meterResult, assetEvents] = await Promise.all([
+          apiFetch(`/maintenance-tasks?asset_type=${encodeURIComponent(assetResult.asset_type)}`),
+          apiFetch(`/assets/${id}/meters`),
+          apiFetch(`/assets/${id}/maintenance-events`),
+        ])
         setAsset(assetResult)
-        setTaskSuggestions(suggestions.map((suggestion) => suggestion.task_name))
+        const uniqueTaskNames = Array.from(new Set(
+          suggestions
+            .filter((suggestion) => suggestion.id !== null)
+            .map((suggestion) => suggestion.task_name),
+        ))
+        setTaskSuggestions(uniqueTaskNames)
+        setExistingEvents(assetEvents)
         setMeters(meterResult)
       })
       .catch((err) => setError(err.message || 'Unable to load asset details'))
@@ -665,6 +862,7 @@ export function MaintenanceEventFormPage() {
   useEffect(() => {
     if (!editEventId) return
     apiFetch(`/assets/${id}/maintenance-events`).then((events) => {
+      setExistingEvents(events)
       const event = events.find((candidate) => String(candidate.id) === String(editEventId))
       if (!event) return
       setTasks(event.event_type.split(',').map((task) => task.trim()).filter(Boolean))
@@ -719,11 +917,15 @@ export function MaintenanceEventFormPage() {
     }
     setTasks(mergedTasks)
     setTaskInput('')
+    if (!form.performed_date) {
+      setError('Activity Date is required.')
+      return
+    }
     const payload = {
       event_type: mergedTasks.join(', '),
       notes: form.notes?.trim() || null,
       completion_meter_value: form.completion_meter_value ? Number(form.completion_meter_value) : null,
-      performed_at: form.performed_date ? `${form.performed_date}T00:00:00` : null,
+      performed_at: `${form.performed_date}T00:00:00`,
     }
     await apiFetch(editEventId ? `/maintenance-events/${editEventId}` : `/assets/${id}/maintenance-events`, {
       method: editEventId ? 'PUT' : 'POST',
@@ -731,15 +933,30 @@ export function MaintenanceEventFormPage() {
         ...payload,
       }),
     })
+    const knownTaskNames = new Set(taskSuggestions.map((task) => task.toLowerCase()))
+    const newTaskNames = mergedTasks.filter((task) => !knownTaskNames.has(task.toLowerCase()))
+    await Promise.all(newTaskNames.map((taskName) => apiFetch('/maintenance-tasks', {
+      method: 'POST',
+      body: JSON.stringify({ task_name: taskName, asset_type: asset?.asset_type }),
+    }).catch(() => null)))
+    navigate(`/assets/${id}`)
+  }
+
+  async function deleteActivity() {
+    if (!editEventId) return
+    const confirmed = window.confirm('Delete this maintenance activity?')
+    if (!confirmed) return
+    await apiFetch(`/maintenance-events/${editEventId}`, { method: 'DELETE' })
     navigate(`/assets/${id}`)
   }
 
   const activeMeter = meters[0]
+  const currentServiceValue = highestServiceValue({ events: existingEvents, meterValue: activeMeter?.current_value })
 
   return (
     <form onSubmit={submit} className="card narrow-card">
       <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Record Maintenance Activity' }]} />
-      <h2>Record Maintenance Activity</h2>
+      <h2>{editEventId ? 'Edit Maintenance Activity' : 'Record Maintenance Activity'}</h2>
       {asset && <p className="hint">Capture completed work for <strong>{asset.name}</strong>.</p>}
       {error && <p className="error">{error}</p>}
 
@@ -751,7 +968,11 @@ export function MaintenanceEventFormPage() {
             <button
               type="button"
               className="badge-remove"
-              onClick={() => setTasks((current) => current.filter((value) => value !== task))}
+              onClick={() => setTasks((current) => {
+                const nextTasks = current.filter((value) => value !== task)
+                if (nextTasks.length === 0) setIsTaskInputLocked(false)
+                return nextTasks
+              })}
             >
               ×
             </button>
@@ -788,16 +1009,22 @@ export function MaintenanceEventFormPage() {
           .map((task) => <option key={task} value={task} />)}
       </datalist>
       <p className="hint">Type a task and press comma to add it. Click a badge to remove it.</p>
-      <label htmlFor="completion-meter">{`Current ${usageLabel(asset?.service_trigger)} (Last recorded: ${activeMeter?.current_value !== null && activeMeter?.current_value !== undefined ? `${formatIntervalValue(activeMeter.current_value)} ${activeMeter.unit}` : `No reading ${usageUnit(asset?.service_trigger)}`})`}</label>
+      <label htmlFor="completion-meter">{`Current ${usageLabel(asset?.service_trigger)} (Last recorded: ${currentServiceValue !== null ? `${formatIntervalValue(currentServiceValue)} ${activeMeter?.unit || usageUnit(asset?.service_trigger)}` : `No reading ${usageUnit(asset?.service_trigger)}`})`}</label>
       <input id="completion-meter" inputMode="decimal" value={form.completion_meter_value} onChange={(e) => setForm({ ...form, completion_meter_value: e.target.value })} />
       <label htmlFor="performed-date">Activity Date</label>
-      <input id="performed-date" type="date" value={form.performed_date} onChange={(e) => setForm({ ...form, performed_date: e.target.value })} />
-      {form.performed_date && <p className="hint">{new Date(`${form.performed_date}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>}
+      <input
+        id="performed-date"
+        type="date"
+        value={form.performed_date}
+        onChange={(e) => setForm({ ...form, performed_date: e.target.value })}
+      />
+      {form.performed_date && <p className="hint">{formatLongDate(`${form.performed_date}T00:00:00`)}</p>}
       <label htmlFor="maintenance-notes">Notes</label>
       <textarea id="maintenance-notes" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
 
       <div className="actions">
         <button className="btn btn-primary" type="submit" disabled={tasks.length === 0 && !taskInput.trim()}>{editEventId ? 'Update Activity' : 'Record Maintenance Activity'}</button>
+        {editEventId && <button className="btn btn-outline-danger" type="button" onClick={deleteActivity}>Delete activity</button>}
         <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>
@@ -811,15 +1038,16 @@ export function ScheduleFormPage() {
   const [error, setError] = useState('')
   const [activitySuggestions, setActivitySuggestions] = useState([])
   const [existingScheduleTitles, setExistingScheduleTitles] = useState([])
+  const [taskInput, setTaskInput] = useState('')
   const [form, setForm] = useState({ title: '', description: '', time_interval: '', usage_interval: '' })
 
   useEffect(() => {
-    Promise.all([
-      apiFetch(`/assets/${id}`),
-      apiFetch('/maintenance-tasks'),
-      apiFetch(`/assets/${id}/schedules`),
-    ])
-      .then(([assetResult, suggestions, schedules]) => {
+    apiFetch(`/assets/${id}`)
+      .then(async (assetResult) => {
+        const [suggestions, schedules] = await Promise.all([
+          apiFetch(`/maintenance-tasks?asset_type=${encodeURIComponent(assetResult.asset_type)}`),
+          apiFetch(`/assets/${id}/schedules`),
+        ])
         setAsset(assetResult)
         setActivitySuggestions(suggestions.map((suggestion) => ({ activity_name: suggestion.task_name })))
         setExistingScheduleTitles(schedules.map((schedule) => schedule.title.trim().toLowerCase()))
@@ -856,6 +1084,13 @@ export function ScheduleFormPage() {
     navigate(`/assets/${id}`)
   }
 
+  function commitTaskTitle(value) {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    setForm((current) => ({ ...current, title: trimmed }))
+    setTaskInput('')
+  }
+
   return (
     <form onSubmit={submit} className="card narrow-card">
       <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: 'Add Scheduled Maintenance Task' }]} />
@@ -864,7 +1099,30 @@ export function ScheduleFormPage() {
       {error && <p className="error">{error}</p>}
 
       <label htmlFor="schedule-title">Maintenance Task</label>
-      <input id="schedule-title" list="scheduled-activity-options" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+      <div className="task-input-box">
+        {form.title && (
+          <span className="badge">
+            {form.title}
+            <button type="button" className="badge-remove" onClick={() => setForm((current) => ({ ...current, title: '' }))}>×</button>
+          </span>
+        )}
+        <input
+          id="schedule-title"
+          list="scheduled-activity-options"
+          required={!form.title}
+          className="task-inline-input"
+          value={form.title ? '' : taskInput}
+          disabled={Boolean(form.title)}
+          onChange={(e) => setTaskInput(e.target.value)}
+          onBlur={() => commitTaskTitle(taskInput)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commitTaskTitle(taskInput)
+            }
+          }}
+        />
+      </div>
       <datalist id="scheduled-activity-options">
         {activitySuggestions
           .filter((suggestion) => !existingScheduleTitles.includes(suggestion.activity_name.trim().toLowerCase()))
@@ -896,6 +1154,7 @@ export function ScheduleEditPage() {
   const { id, scheduleId } = useParams()
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
+  const [taskInput, setTaskInput] = useState('')
   const [form, setForm] = useState({ title: '', description: '', time_interval: '', usage_interval: '' })
   const [schedule, setSchedule] = useState(null)
   const [error, setError] = useState('')
@@ -957,13 +1216,42 @@ export function ScheduleEditPage() {
     navigate(`/assets/${id}`)
   }
 
+  function commitTaskTitle(value) {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    setForm((current) => ({ ...current, title: trimmed }))
+    setTaskInput('')
+  }
+
   return (
     <form onSubmit={submit} className="card narrow-card">
       <Breadcrumbs items={[{ label: 'Assets', to: '/assets' }, { label: asset?.name || 'Asset', to: `/assets/${id}` }, { label: form.title || 'Edit Scheduled Maintenance Task' }]} />
       <h2>Edit Scheduled Maintenance Task</h2>
       {error && <p className="error">{error}</p>}
       <label htmlFor="edit-schedule-title">Maintenance Task</label>
-      <input id="edit-schedule-title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+      <div className="task-input-box">
+        {form.title && (
+          <span className="badge">
+            {form.title}
+            <button type="button" className="badge-remove" onClick={() => setForm((current) => ({ ...current, title: '' }))}>×</button>
+          </span>
+        )}
+        <input
+          id="edit-schedule-title"
+          required={!form.title}
+          className="task-inline-input"
+          value={form.title ? '' : taskInput}
+          disabled={Boolean(form.title)}
+          onChange={(e) => setTaskInput(e.target.value)}
+          onBlur={() => commitTaskTitle(taskInput)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commitTaskTitle(taskInput)
+            }
+          }}
+        />
+      </div>
       <label htmlFor="edit-schedule-description">Description</label>
       <textarea id="edit-schedule-description" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
       <label htmlFor="edit-schedule-time-interval">Service Interval - Time-based maintenance (optional)</label>
@@ -976,7 +1264,7 @@ export function ScheduleEditPage() {
       <p className="hint">Set time, service trigger usage, or both (whichever comes first).</p>
       <div className="actions">
         <button className="btn btn-primary" type="submit">Save service interval</button>
-        <button className="btn btn-outline-danger" type="button" onClick={deleteTask}>Delete task</button>
+        <button className="btn btn-outline-danger" type="button" onClick={deleteTask}>Delete</button>
         <Link className="btn btn-outline-secondary" to={`/assets/${id}`}>Cancel</Link>
       </div>
     </form>

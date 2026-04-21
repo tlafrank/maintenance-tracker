@@ -1,12 +1,17 @@
 import logging
+import io
+from pathlib import Path
+from uuid import uuid4
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from PIL import Image, UnidentifiedImageError
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import get_db
 from app.models.models import Asset, AssetType, MaintenanceEvent, MaintenanceSchedule, MaintenanceTaskTemplate, Meter, MeterReading, User
@@ -24,6 +29,7 @@ from app.schemas.schemas import (
     MaintenanceTaskSuggestion,
     MaintenanceTaskRename,
     MaintenanceTaskCreate,
+    MaintenanceTaskDeleteImpact,
     MaintenanceTaskUpdate,
     MeterCreate,
     MeterOut,
@@ -42,6 +48,10 @@ from app.services.due_logic import evaluate_schedule_status, latest_meter_map
 
 router = APIRouter()
 auth_logger = logging.getLogger('app.auth')
+UPLOAD_DIRECTORY = Path(settings.uploads_dir) / 'assets'
+ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_THUMBNAIL_DIMENSIONS = (1024, 1024)
 
 
 @router.post('/auth/register', response_model=UserOut)
@@ -56,7 +66,7 @@ def register(payload: UserCreate, request: Request, db: Session = Depends(get_db
         raise HTTPException(status_code=400, detail='Email already registered')
     user = User(
         email=payload.email,
-        display_name=payload.display_name,
+        display_name=(payload.display_name.strip() if payload.display_name else payload.email.split('@')[0]),
         password_hash=hash_password(payload.password),
         preferred_distance_unit='km',
         upcoming_task_window_days=14,
@@ -101,7 +111,6 @@ def me(current_user: User = Depends(get_current_user)):
 
 @router.put('/auth/profile', response_model=UserOut)
 def update_profile(payload: UserProfileUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    current_user.display_name = payload.display_name.strip() or current_user.display_name
     current_user.preferred_distance_unit = payload.preferred_distance_unit.strip() or 'km'
     current_user.upcoming_task_window_days = max(1, int(payload.upcoming_task_window_days or 14))
 
@@ -164,6 +173,14 @@ def _owned_asset(asset_id: int, user_id: int, db: Session) -> Asset:
     return asset
 
 
+def _delete_existing_thumbnail(asset: Asset):
+    if not asset.thumbnail_path:
+        return
+    existing_path = Path(settings.uploads_dir) / asset.thumbnail_path.replace('/uploads/', '', 1).lstrip('/')
+    if existing_path.exists():
+        existing_path.unlink()
+
+
 def _validate_service_interval(interval_days: int | None, usage_interval: float | None):
     if interval_days is None and usage_interval is None:
         raise HTTPException(status_code=400, detail='Service interval requires time, service trigger usage, or both.')
@@ -209,6 +226,55 @@ def update_asset(asset_id: int, payload: AssetUpdate, current_user: User = Depen
         raise HTTPException(status_code=400, detail='Select a valid asset type')
     for key, value in payload.model_dump().items():
         setattr(asset, key, value)
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+@router.post('/assets/{asset_id}/thumbnail', response_model=AssetOut)
+async def upload_asset_thumbnail(
+    asset_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    asset = _owned_asset(asset_id, current_user.id, db)
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail='Upload a JPG, PNG, WEBP, or GIF image.')
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail='Uploaded image is empty.')
+    if len(content) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail='Image must be 5MB or less.')
+
+    try:
+        source_image = Image.open(io.BytesIO(content))
+    except UnidentifiedImageError as exc:
+        raise HTTPException(status_code=400, detail='Uploaded file is not a valid image.') from exc
+
+    has_alpha_channel = source_image.mode in {'RGBA', 'LA'} or 'transparency' in source_image.info
+    optimized_image = source_image.convert('RGBA' if has_alpha_channel else 'RGB')
+    optimized_image.thumbnail(MAX_THUMBNAIL_DIMENSIONS)
+    optimized_buffer = io.BytesIO()
+    save_kwargs = {'format': 'WEBP', 'method': 6}
+    if has_alpha_channel:
+        save_kwargs['lossless'] = True
+    else:
+        save_kwargs['quality'] = 82
+    optimized_image.save(optimized_buffer, **save_kwargs)
+    optimized_content = optimized_buffer.getvalue()
+
+    extension = '.webp'
+
+    user_upload_directory = UPLOAD_DIRECTORY / str(current_user.id)
+    user_upload_directory.mkdir(parents=True, exist_ok=True)
+    filename = f'{asset.id}-{uuid4().hex}{extension}'
+    saved_path = user_upload_directory / filename
+    saved_path.write_bytes(optimized_content)
+
+    _delete_existing_thumbnail(asset)
+    asset.thumbnail_path = f'/uploads/assets/{current_user.id}/{filename}'
     db.commit()
     db.refresh(asset)
     return asset
@@ -299,7 +365,12 @@ def list_readings(asset_id: int, current_user: User = Depends(get_current_user),
 @router.get('/assets/{asset_id}/schedules', response_model=list[ScheduleOut])
 def list_schedules(asset_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _owned_asset(asset_id, current_user.id, db)
-    return db.scalars(select(MaintenanceSchedule).where(MaintenanceSchedule.asset_id == asset_id)).all()
+    return db.scalars(
+        select(MaintenanceSchedule).where(
+            MaintenanceSchedule.asset_id == asset_id,
+            MaintenanceSchedule.active.is_(True),
+        )
+    ).all()
 
 
 @router.post('/assets/{asset_id}/schedules', response_model=ScheduleOut)
@@ -310,6 +381,19 @@ def create_schedule(asset_id: int, payload: ScheduleCreate, current_user: User =
     schedule_payload = _normalize_usage_intervals(asset, payload.model_dump())
     schedule = MaintenanceSchedule(asset_id=asset_id, **schedule_payload)
     db.add(schedule)
+    existing_template = db.scalar(
+        select(MaintenanceTaskTemplate).where(
+            MaintenanceTaskTemplate.owner_user_id == current_user.id,
+            MaintenanceTaskTemplate.asset_type == asset.asset_type,
+            MaintenanceTaskTemplate.task_name == payload.title.strip(),
+        )
+    )
+    if not existing_template and payload.title.strip():
+        db.add(MaintenanceTaskTemplate(
+            owner_user_id=current_user.id,
+            asset_type=asset.asset_type,
+            task_name=payload.title.strip(),
+        ))
     db.commit()
     db.refresh(schedule)
     return schedule
@@ -384,6 +468,19 @@ def create_event(asset_id: int, payload: MaintenanceEventCreate, current_user: U
         completion_meter_value=payload.completion_meter_value,
     )
     db.add(event)
+    event_tasks = [task.strip() for task in payload.event_type.split(',') if task.strip()]
+    existing_templates = db.scalars(
+        select(MaintenanceTaskTemplate).where(
+            MaintenanceTaskTemplate.owner_user_id == current_user.id,
+            MaintenanceTaskTemplate.asset_type == asset.asset_type,
+        )
+    ).all()
+    existing_task_names = {template.task_name.strip().lower() for template in existing_templates}
+    for task_name in event_tasks:
+        if task_name.lower() in existing_task_names:
+            continue
+        db.add(MaintenanceTaskTemplate(owner_user_id=current_user.id, asset_type=asset.asset_type, task_name=task_name))
+        existing_task_names.add(task_name.lower())
     if payload.completion_meter_value is not None:
         meter = db.scalar(select(Meter).where(Meter.asset_id == asset_id).order_by(desc(Meter.id)))
         if not meter:
@@ -439,9 +536,33 @@ def update_event(event_id: int, payload: MaintenanceEventCreate, current_user: U
             reading_value=payload.completion_meter_value,
             notes='Auto-captured from maintenance history update',
         ))
+    event_tasks = [task.strip() for task in payload.event_type.split(',') if task.strip()]
+    existing_templates = db.scalars(
+        select(MaintenanceTaskTemplate).where(
+            MaintenanceTaskTemplate.owner_user_id == current_user.id,
+            MaintenanceTaskTemplate.asset_type == asset.asset_type,
+        )
+    ).all()
+    existing_task_names = {template.task_name.strip().lower() for template in existing_templates}
+    for task_name in event_tasks:
+        if task_name.lower() in existing_task_names:
+            continue
+        db.add(MaintenanceTaskTemplate(owner_user_id=current_user.id, asset_type=asset.asset_type, task_name=task_name))
+        existing_task_names.add(task_name.lower())
     db.commit()
     db.refresh(event)
     return event
+
+
+@router.delete('/maintenance-events/{event_id}')
+def delete_event(event_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    event = db.get(MaintenanceEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail='Maintenance event not found')
+    _owned_asset(event.asset_id, current_user.id, db)
+    db.delete(event)
+    db.commit()
+    return {'ok': True}
 
 
 @router.get('/maintenance-activities', response_model=list[MaintenanceActivitySuggestion])
@@ -471,51 +592,41 @@ def list_maintenance_activities(current_user: User = Depends(get_current_user), 
 
 
 @router.get('/maintenance-tasks', response_model=list[MaintenanceTaskSuggestion])
-def list_maintenance_tasks(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_maintenance_tasks(asset_type: str | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    normalized_asset_type = asset_type.strip() if asset_type else None
     templates = db.scalars(
         select(MaintenanceTaskTemplate)
         .where(MaintenanceTaskTemplate.owner_user_id == current_user.id)
+        .where(MaintenanceTaskTemplate.asset_type == normalized_asset_type if normalized_asset_type else True)
         .order_by(MaintenanceTaskTemplate.task_name)
     ).all()
     tasks: list[MaintenanceTaskSuggestion] = [
-        MaintenanceTaskSuggestion(id=template.id, task_name=template.task_name)
+        MaintenanceTaskSuggestion(id=template.id, asset_type=template.asset_type, task_name=template.task_name)
         for template in templates
     ]
-    seen: set[str] = {template.task_name.strip().lower() for template in templates}
-
-    events = db.scalars(
-        select(MaintenanceEvent)
-        .where(MaintenanceEvent.performed_by_user_id == current_user.id)
-        .order_by(desc(MaintenanceEvent.performed_at))
-    ).all()
-    for event in events:
-        for task in [part.strip() for part in event.event_type.split(',')]:
-            key = task.lower()
-            if not task or key in seen:
-                continue
-            seen.add(key)
-            tasks.append(MaintenanceTaskSuggestion(id=None, task_name=task))
     return tasks
 
 
 @router.post('/maintenance-tasks', response_model=MaintenanceTaskSuggestion)
 def create_maintenance_task(payload: MaintenanceTaskCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task_name = payload.task_name.strip()
+    normalized_asset_type = payload.asset_type.strip() if payload.asset_type else None
     if not task_name:
         raise HTTPException(status_code=400, detail='Task name is required')
     existing = db.scalar(
         select(MaintenanceTaskTemplate).where(
             MaintenanceTaskTemplate.owner_user_id == current_user.id,
             MaintenanceTaskTemplate.task_name == task_name,
+            MaintenanceTaskTemplate.asset_type == normalized_asset_type,
         )
     )
     if existing:
         raise HTTPException(status_code=400, detail='Task already exists')
-    template = MaintenanceTaskTemplate(owner_user_id=current_user.id, task_name=task_name)
+    template = MaintenanceTaskTemplate(owner_user_id=current_user.id, asset_type=normalized_asset_type, task_name=task_name)
     db.add(template)
     db.commit()
     db.refresh(template)
-    return MaintenanceTaskSuggestion(id=template.id, task_name=template.task_name)
+    return MaintenanceTaskSuggestion(id=template.id, asset_type=template.asset_type, task_name=template.task_name)
 
 
 @router.put('/maintenance-tasks/{task_id}', response_model=MaintenanceTaskSuggestion)
@@ -523,13 +634,137 @@ def update_maintenance_task(task_id: int, payload: MaintenanceTaskUpdate, curren
     template = db.get(MaintenanceTaskTemplate, task_id)
     if not template or template.owner_user_id != current_user.id:
         raise HTTPException(status_code=404, detail='Maintenance task not found')
+    previous_task_name = template.task_name.strip()
+    previous_asset_type = template.asset_type
     task_name = payload.task_name.strip()
+    normalized_asset_type = payload.asset_type.strip() if payload.asset_type else None
     if not task_name:
         raise HTTPException(status_code=400, detail='Task name is required')
+    existing = db.scalar(
+        select(MaintenanceTaskTemplate).where(
+            MaintenanceTaskTemplate.owner_user_id == current_user.id,
+            MaintenanceTaskTemplate.task_name == task_name,
+            MaintenanceTaskTemplate.asset_type == normalized_asset_type,
+            MaintenanceTaskTemplate.id != template.id,
+        )
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail='Task already exists')
+
+    matching_assets = db.scalars(
+        select(Asset).where(
+            Asset.owner_user_id == current_user.id,
+            Asset.asset_type == previous_asset_type,
+        )
+    ).all()
+    matching_asset_ids = {asset.id for asset in matching_assets}
+    normalized_previous_name = previous_task_name.lower()
+    normalized_new_name = task_name.lower()
+
+    if matching_asset_ids and normalized_previous_name != normalized_new_name:
+        schedules = db.scalars(select(MaintenanceSchedule).where(MaintenanceSchedule.asset_id.in_(matching_asset_ids))).all()
+        for schedule in schedules:
+            if schedule.title.strip().lower() == normalized_previous_name:
+                schedule.title = task_name
+
+        events = db.scalars(select(MaintenanceEvent).where(MaintenanceEvent.asset_id.in_(matching_asset_ids))).all()
+        for event in events:
+            tasks = [part.strip() for part in event.event_type.split(',') if part.strip()]
+            replaced_tasks = [task_name if task.lower() == normalized_previous_name else task for task in tasks]
+            if tasks != replaced_tasks:
+                event.event_type = ', '.join(replaced_tasks)
+
     template.task_name = task_name
+    template.asset_type = normalized_asset_type
     db.commit()
     db.refresh(template)
-    return MaintenanceTaskSuggestion(id=template.id, task_name=template.task_name)
+    return MaintenanceTaskSuggestion(id=template.id, asset_type=template.asset_type, task_name=template.task_name)
+
+
+def _maintenance_task_impact(template: MaintenanceTaskTemplate, current_user: User, db: Session) -> MaintenanceTaskDeleteImpact:
+    matching_assets = db.scalars(
+        select(Asset).where(
+            Asset.owner_user_id == current_user.id,
+            Asset.asset_type == template.asset_type,
+        )
+    ).all()
+    matching_asset_ids = {asset.id for asset in matching_assets}
+
+    schedules = db.scalars(
+        select(MaintenanceSchedule).where(MaintenanceSchedule.asset_id.in_(matching_asset_ids))
+    ).all() if matching_asset_ids else []
+    affected_schedules = sum(1 for schedule in schedules if schedule.title.strip().lower() == template.task_name.strip().lower() and schedule.active)
+
+    events = db.scalars(
+        select(MaintenanceEvent).where(MaintenanceEvent.asset_id.in_(matching_asset_ids))
+    ).all() if matching_asset_ids else []
+    affected_history_records = 0
+    deleted_history_records = 0
+    for event in events:
+        tasks = [part.strip() for part in event.event_type.split(',') if part.strip()]
+        kept_tasks = [task for task in tasks if task.lower() != template.task_name.strip().lower()]
+        if len(kept_tasks) != len(tasks):
+            if kept_tasks:
+                affected_history_records += 1
+            else:
+                deleted_history_records += 1
+
+    return MaintenanceTaskDeleteImpact(
+        task_name=template.task_name,
+        asset_type=template.asset_type,
+        affected_schedules=affected_schedules,
+        affected_history_records=affected_history_records,
+        deleted_history_records=deleted_history_records,
+    )
+
+
+@router.get('/maintenance-tasks/{task_id}/impact', response_model=MaintenanceTaskDeleteImpact)
+def maintenance_task_impact(task_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    template = db.get(MaintenanceTaskTemplate, task_id)
+    if not template or template.owner_user_id != current_user.id:
+        raise HTTPException(status_code=404, detail='Maintenance task not found')
+    return _maintenance_task_impact(template, current_user, db)
+
+
+@router.delete('/maintenance-tasks/{task_id}', response_model=MaintenanceTaskDeleteImpact)
+def delete_maintenance_task(task_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    template = db.get(MaintenanceTaskTemplate, task_id)
+    if not template or template.owner_user_id != current_user.id:
+        raise HTTPException(status_code=404, detail='Maintenance task not found')
+
+    impact = _maintenance_task_impact(template, current_user, db)
+    matching_assets = db.scalars(
+        select(Asset).where(
+            Asset.owner_user_id == current_user.id,
+            Asset.asset_type == template.asset_type,
+        )
+    ).all()
+    matching_asset_ids = {asset.id for asset in matching_assets}
+
+    if matching_asset_ids:
+        schedules = db.scalars(
+            select(MaintenanceSchedule).where(MaintenanceSchedule.asset_id.in_(matching_asset_ids))
+        ).all()
+        for schedule in schedules:
+            if schedule.title.strip().lower() == template.task_name.strip().lower():
+                schedule.active = False
+
+        events = db.scalars(
+            select(MaintenanceEvent).where(MaintenanceEvent.asset_id.in_(matching_asset_ids))
+        ).all()
+        for event in events:
+            tasks = [part.strip() for part in event.event_type.split(',') if part.strip()]
+            kept_tasks = [task for task in tasks if task.lower() != template.task_name.strip().lower()]
+            if len(kept_tasks) == len(tasks):
+                continue
+            if not kept_tasks:
+                db.delete(event)
+            else:
+                event.event_type = ', '.join(kept_tasks)
+
+    db.delete(template)
+    db.commit()
+    return impact
 
 
 @router.put('/maintenance-tasks/rename')
@@ -590,26 +825,26 @@ def dashboard(current_user: User = Depends(get_current_user), db: Session = Depe
                 event for event in asset_events
                 if schedule.title.strip().lower() in [task.strip().lower() for task in event.event_type.split(',')]
             ), None)
-            status_value = evaluate_schedule_status(
-                schedule,
-                asset,
-                meter_map,
-                last_event,
-                datetime.utcnow(),
-                due_soon_window_days=current_user.upcoming_task_window_days,
-            )
+            if last_event is None:
+                status_value = 'overdue'
+            else:
+                status_value = evaluate_schedule_status(
+                    schedule,
+                    asset,
+                    meter_map,
+                    last_event,
+                    datetime.utcnow(),
+                    due_soon_window_days=current_user.upcoming_task_window_days,
+                )
             if status_value == 'due_soon' and schedule.interval_days and last_event:
                 due_date = last_event.performed_at + timedelta(days=schedule.interval_days)
-                if due_date > datetime.utcnow() + timedelta(days=current_user.upcoming_task_window_days):
-                    status_value = 'not_due'
-            elif status_value == 'due_soon' and schedule.interval_days and not last_event:
-                due_date = asset.created_at + timedelta(days=schedule.interval_days)
                 if due_date > datetime.utcnow() + timedelta(days=current_user.upcoming_task_window_days):
                     status_value = 'not_due'
             item = DashboardItem(
                 asset_id=asset.id,
                 schedule_id=schedule.id,
                 asset_name=asset.name,
+                thumbnail_path=asset.thumbnail_path,
                 schedule_title=schedule.title,
                 status=status_value,
             )

@@ -41,7 +41,7 @@ export function LoginPage({ onLogin }) {
 }
 
 export function RegisterPage() {
-  const [form, setForm] = useState({ email: '', display_name: '', password: '' })
+  const [form, setForm] = useState({ email: '', password: '' })
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -62,8 +62,6 @@ export function RegisterPage() {
       <h2 className="h4">Register</h2>
       <label htmlFor="register-email">Email</label>
       <input id="register-email" className="form-control" required type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-      <label htmlFor="register-name">Display name</label>
-      <input id="register-name" className="form-control" required value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })} />
       <label htmlFor="register-password">Password</label>
       <input id="register-password" className="form-control" required type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
       {error && <p className="error">{error}</p>}

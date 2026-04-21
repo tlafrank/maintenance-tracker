@@ -44,6 +44,7 @@ class Asset(TimestampMixin, Base):
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     registration_or_serial: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    thumbnail_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     service_trigger: Mapped[str] = mapped_column('interval_basis', String(20), default='distance')
     archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -125,6 +126,7 @@ class MaintenanceTaskTemplate(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
+    asset_type: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     task_name: Mapped[str] = mapped_column(String(100))
 
     owner: Mapped['User'] = relationship(back_populates='maintenance_tasks')
