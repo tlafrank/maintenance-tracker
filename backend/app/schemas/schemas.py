@@ -13,7 +13,7 @@ class Token(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
-    display_name: str
+    display_name: str | None = None
 
 
 class UserOut(BaseModel):
@@ -238,7 +238,6 @@ class DashboardOut(BaseModel):
 
 
 class UserProfileUpdate(BaseModel):
-    display_name: str
     preferred_distance_unit: str = 'km'
     upcoming_task_window_days: int = 14
     current_password: str | None = None

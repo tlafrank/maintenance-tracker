@@ -6,12 +6,11 @@ const DISTANCE_UNITS = ['km', 'mi']
 
 export function ProfilePage({ onLogout }) {
   const [form, setForm] = useState({
-    display_name: '',
     preferred_distance_unit: 'km',
-    upcoming_task_window_days: 14,
     current_password: '',
     new_password: '',
   })
+  const [upcomingTaskWindowWeeks, setUpcomingTaskWindowWeeks] = useState('2')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [taskName, setTaskName] = useState('')
@@ -23,12 +22,8 @@ export function ProfilePage({ onLogout }) {
 
   useEffect(() => {
     Promise.all([apiFetch('/auth/me'), apiFetch('/asset-types')]).then(([me, assetTypeList]) => {
-      setForm((current) => ({
-        ...current,
-        display_name: me.display_name,
-        preferred_distance_unit: me.preferred_distance_unit || 'km',
-        upcoming_task_window_days: me.upcoming_task_window_days || 14,
-      }))
+      setForm((current) => ({ ...current, preferred_distance_unit: me.preferred_distance_unit || 'km' }))
+      setUpcomingTaskWindowWeeks(String(Math.max(1, Math.round((me.upcoming_task_window_days || 14) / 7))))
       setAssetTypes(assetTypeList)
       if (assetTypeList[0]?.name) setSelectedAssetType(assetTypeList[0].name)
     })
@@ -47,9 +42,13 @@ export function ProfilePage({ onLogout }) {
     setError('')
     setMessage('')
     try {
+      const upcomingWeeks = Math.max(1, Number(upcomingTaskWindowWeeks || 1))
       await apiFetch('/auth/profile', {
         method: 'PUT',
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          upcoming_task_window_days: Math.round(upcomingWeeks * 7),
+        }),
       })
       setForm((current) => ({ ...current, current_password: '', new_password: '' }))
       setMessage('Profile updated.')
@@ -100,21 +99,19 @@ export function ProfilePage({ onLogout }) {
       {error && <p className="error">{error}</p>}
       {message && <p>{message}</p>}
 
-      <label htmlFor="profile-name">Name</label>
-      <input id="profile-name" required value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
-
       <label htmlFor="profile-unit">Preferred Distance Unit</label>
       <select id="profile-unit" value={form.preferred_distance_unit} onChange={(e) => setForm({ ...form, preferred_distance_unit: e.target.value })}>
         {DISTANCE_UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
       </select>
 
-      <label htmlFor="profile-upcoming-window">Upcoming Task Window (days)</label>
+      <label htmlFor="profile-upcoming-window">Upcoming Task Window (weeks)</label>
       <input
         id="profile-upcoming-window"
         type="number"
         min="1"
-        value={form.upcoming_task_window_days}
-        onChange={(e) => setForm({ ...form, upcoming_task_window_days: Number(e.target.value || 14) })}
+        step="1"
+        value={upcomingTaskWindowWeeks}
+        onChange={(e) => setUpcomingTaskWindowWeeks(e.target.value)}
       />
 
       <label htmlFor="profile-current-password">Current Password</label>

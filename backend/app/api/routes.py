@@ -65,7 +65,7 @@ def register(payload: UserCreate, request: Request, db: Session = Depends(get_db
         raise HTTPException(status_code=400, detail='Email already registered')
     user = User(
         email=payload.email,
-        display_name=payload.display_name,
+        display_name=(payload.display_name.strip() if payload.display_name else payload.email.split('@')[0]),
         password_hash=hash_password(payload.password),
         preferred_distance_unit='km',
         upcoming_task_window_days=14,
@@ -110,7 +110,6 @@ def me(current_user: User = Depends(get_current_user)):
 
 @router.put('/auth/profile', response_model=UserOut)
 def update_profile(payload: UserProfileUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    current_user.display_name = payload.display_name.strip() or current_user.display_name
     current_user.preferred_distance_unit = payload.preferred_distance_unit.strip() or 'km'
     current_user.upcoming_task_window_days = max(1, int(payload.upcoming_task_window_days or 14))
 
