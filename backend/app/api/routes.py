@@ -252,10 +252,16 @@ async def upload_asset_thumbnail(
     except UnidentifiedImageError as exc:
         raise HTTPException(status_code=400, detail='Uploaded file is not a valid image.') from exc
 
-    optimized_image = source_image.convert('RGB')
+    has_alpha_channel = source_image.mode in {'RGBA', 'LA'} or 'transparency' in source_image.info
+    optimized_image = source_image.convert('RGBA' if has_alpha_channel else 'RGB')
     optimized_image.thumbnail(MAX_THUMBNAIL_DIMENSIONS)
     optimized_buffer = io.BytesIO()
-    optimized_image.save(optimized_buffer, format='WEBP', quality=82, optimize=True)
+    save_kwargs = {'format': 'WEBP', 'method': 6}
+    if has_alpha_channel:
+        save_kwargs['lossless'] = True
+    else:
+        save_kwargs['quality'] = 82
+    optimized_image.save(optimized_buffer, **save_kwargs)
     optimized_content = optimized_buffer.getvalue()
 
     extension = '.webp'
