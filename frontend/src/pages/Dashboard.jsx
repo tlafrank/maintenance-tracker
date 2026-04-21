@@ -15,8 +15,11 @@ function usageUnit(serviceTrigger) {
 }
 
 function AssetThumbnail({ thumbnailPath, name }) {
-  if (!thumbnailPath) return <div className="dashboard-thumbnail dashboard-thumbnail-placeholder" aria-hidden="true">No image</div>
-  return <img className="dashboard-thumbnail" src={`/api${thumbnailPath}`} alt={`${name} thumbnail`} />
+  const [imageUnavailable, setImageUnavailable] = useState(false)
+  if (!thumbnailPath || imageUnavailable) {
+    return <div className="dashboard-thumbnail dashboard-thumbnail-placeholder" aria-hidden="true">No image</div>
+  }
+  return <img className="dashboard-thumbnail" src={`/api${thumbnailPath}`} alt={`${name} thumbnail`} onError={() => setImageUnavailable(true)} />
 }
 
 export function DashboardPage() {

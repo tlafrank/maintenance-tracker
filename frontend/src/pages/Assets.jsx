@@ -52,10 +52,6 @@ function localDateInputValue() {
   return new Date(now.getTime() - tzOffsetMs).toISOString().slice(0, 10)
 }
 
-function localLongDateValue() {
-  return formatLongDate(`${localDateInputValue()}T00:00:00`)
-}
-
 function relativeTimeFromNow(isoDateString) {
   if (!isoDateString) return 'Unknown'
   const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(isoDateString)
@@ -115,13 +111,6 @@ function formatLongDate(isoDateString) {
   })
 }
 
-function longDateToIsoDate(value) {
-  const normalizedValue = value.trim()
-  if (!normalizedValue) return ''
-  const parsed = new Date(`${normalizedValue} UTC`)
-  if (Number.isNaN(parsed.getTime())) return ''
-  return parsed.toISOString().slice(0, 10)
-}
 
 function formatReadingDateTime(isoDateString) {
   if (!isoDateString) return ''
@@ -504,6 +493,34 @@ export function AssetDetailPage() {
   const usageTypeLabel = usageLabel(asset?.service_trigger)
   const recentEvents = events.slice(0, 5)
 
+  function scheduleSortKey(schedule) {
+    const lastMatchingEvent = events.find((event) => event.event_type.split(',').map((task) => task.trim().toLowerCase()).includes(schedule.title.trim().toLowerCase()))
+    if (!lastMatchingEvent) return { priority: 0, outstandingScore: Number.NEGATIVE_INFINITY }
+
+    const referenceDate = new Date(lastMatchingEvent.performed_at)
+    const dueDate = schedule.interval_days ? new Date(referenceDate.getTime() + (schedule.interval_days * 24 * 60 * 60 * 1000)) : null
+    const daysLeft = dueDate ? Math.ceil((dueDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null
+    const usageInterval = asset.service_trigger === 'distance'
+      ? schedule.interval_distance
+      : asset.service_trigger === 'hours'
+        ? schedule.interval_hours
+        : schedule.interval_cycles
+    const currentReading = latestReading?.reading_value !== null && latestReading?.reading_value !== undefined
+      ? Number(latestReading.reading_value)
+      : null
+    const usageBaseline = lastMatchingEvent?.completion_meter_value !== null && lastMatchingEvent?.completion_meter_value !== undefined
+      ? Number(lastMatchingEvent.completion_meter_value)
+      : 0
+    const usageDueAt = usageInterval !== null && usageInterval !== undefined ? usageBaseline + Number(usageInterval) : null
+    const usageRemaining = usageDueAt !== null && currentReading !== null ? usageDueAt - currentReading : null
+
+    const isOverdue = (daysLeft !== null && daysLeft < 0) || (usageRemaining !== null && usageRemaining <= 0)
+    const isUpcoming = (daysLeft !== null && daysLeft >= 0 && daysLeft <= 14) || (usageRemaining !== null && usageInterval && usageRemaining > 0 && usageRemaining <= Number(usageInterval) * 0.2)
+    const priority = isOverdue ? 0 : isUpcoming ? 1 : 2
+    const outstandingScore = Math.min(daysLeft ?? Number.POSITIVE_INFINITY, usageRemaining ?? Number.POSITIVE_INFINITY)
+    return { priority, outstandingScore }
+  }
+
   if (!asset) return <p>Loading...</p>
 
   return (
@@ -541,7 +558,12 @@ export function AssetDetailPage() {
       </section>
       <section className="card">
         <h3>Scheduled Maintenance Tasks</h3>
-        {schedules.map((schedule) => {
+        {[...schedules].sort((leftSchedule, rightSchedule) => {
+          const left = scheduleSortKey(leftSchedule)
+          const right = scheduleSortKey(rightSchedule)
+          if (left.priority !== right.priority) return left.priority - right.priority
+          return left.outstandingScore - right.outstandingScore
+        }).map((schedule) => {
           const lastMatchingEvent = events.find((event) => event.event_type.split(',').map((task) => task.trim().toLowerCase()).includes(schedule.title.trim().toLowerCase()))
           const referenceDate = lastMatchingEvent ? new Date(lastMatchingEvent.performed_at) : new Date(asset.created_at)
           const dueDate = schedule.interval_days ? new Date(referenceDate.getTime() + (schedule.interval_days * 24 * 60 * 60 * 1000)) : null
@@ -781,7 +803,7 @@ export function MaintenanceEventFormPage() {
   const navigate = useNavigate()
   const [asset, setAsset] = useState(null)
   const [meters, setMeters] = useState([])
-  const [form, setForm] = useState({ completion_meter_value: '', notes: '', performed_date: localLongDateValue() })
+  const [form, setForm] = useState({ completion_meter_value: '', notes: '', performed_date: localDateInputValue() })
   const [taskInput, setTaskInput] = useState('')
   const [tasks, setTasks] = useState([])
   const [taskSuggestions, setTaskSuggestions] = useState([])
@@ -805,7 +827,7 @@ export function MaintenanceEventFormPage() {
       setForm({
         completion_meter_value: event.completion_meter_value ?? '',
         notes: event.notes ?? '',
-        performed_date: event.performed_at ? formatLongDate(event.performed_at) : localLongDateValue(),
+        performed_date: event.performed_at ? event.performed_at.slice(0, 10) : localDateInputValue(),
       })
     })
   }, [id, editEventId])
@@ -853,16 +875,15 @@ export function MaintenanceEventFormPage() {
     }
     setTasks(mergedTasks)
     setTaskInput('')
-    const isoPerformedDate = longDateToIsoDate(form.performed_date)
-    if (!isoPerformedDate) {
-      setError('Enter Activity Date in format like "19 April 2026".')
+    if (!form.performed_date) {
+      setError('Activity Date is required.')
       return
     }
     const payload = {
       event_type: mergedTasks.join(', '),
       notes: form.notes?.trim() || null,
       completion_meter_value: form.completion_meter_value ? Number(form.completion_meter_value) : null,
-      performed_at: `${isoPerformedDate}T00:00:00`,
+      performed_at: `${form.performed_date}T00:00:00`,
     }
     await apiFetch(editEventId ? `/maintenance-events/${editEventId}` : `/assets/${id}/maintenance-events`, {
       method: editEventId ? 'PUT' : 'POST',
@@ -932,11 +953,11 @@ export function MaintenanceEventFormPage() {
       <label htmlFor="performed-date">Activity Date</label>
       <input
         id="performed-date"
+        type="date"
         value={form.performed_date}
         onChange={(e) => setForm({ ...form, performed_date: e.target.value })}
-        placeholder="19 April 2026"
       />
-      <p className="hint">Use format: DD Month YYYY (e.g., 19 April 2026)</p>
+      {form.performed_date && <p className="hint">{formatLongDate(`${form.performed_date}T00:00:00`)}</p>}
       <label htmlFor="maintenance-notes">Notes</label>
       <textarea id="maintenance-notes" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
 
