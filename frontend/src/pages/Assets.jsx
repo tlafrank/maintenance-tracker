@@ -582,11 +582,20 @@ export function AssetDetailPage() {
             {latestReading && <p className="muted-text">{formatReadingDate(latestReading.reading_timestamp)} · {relativeTimeFromNow(latestReading.reading_timestamp)}</p>}
           </div>
         ) : (
-          <p>No readings recorded yet.</p>
+          <>
+            <p className="muted-text">No current reading has been recorded yet.</p>
+            <p className="hint"><Link to={`/assets/${id}/readings/new`}>{`Add your first ${usageTypeLabel.toLowerCase()} update`}</Link></p>
+          </>
         )}
       </section>
       <section className="card">
         <h3>Scheduled Maintenance Tasks</h3>
+        {schedules.length === 0 && (
+          <>
+            <p className="muted-text">No scheduled maintenance tasks yet.</p>
+            <p className="hint"><Link to={`/assets/${id}/schedules/new`}>Create your first scheduled maintenance task</Link></p>
+          </>
+        )}
         {[...schedules].sort((leftSchedule, rightSchedule) => {
           const left = scheduleSortKey(leftSchedule)
           const right = scheduleSortKey(rightSchedule)
@@ -641,8 +650,13 @@ export function AssetDetailPage() {
         })}
       </section>
       <section className="card">
-        <h3>Recent maintenance history</h3>
-        {recentEvents.length === 0 && <p className="muted-text">No maintenance activities recorded yet.</p>}
+        <h3>Recent Maintenance History</h3>
+        {recentEvents.length === 0 && (
+          <>
+            <p className="muted-text">No maintenance history has been recorded yet.</p>
+            <p className="hint"><Link to={`/assets/${id}/maintenance-events/new`}>Record your first maintenance activity</Link></p>
+          </>
+        )}
         {recentEvents.map((ev) => (
           <div key={ev.id} className="meter-highlight">
             <p><Link to={`/assets/${id}/maintenance-events/new?edit=${ev.id}`}><strong>{formatReadingDate(ev.performed_at)}</strong></Link> {ev.completion_meter_value !== null ? `@ ${formatIntervalValue(ev.completion_meter_value)} ${usageUnit(asset.service_trigger)}` : ''}</p>

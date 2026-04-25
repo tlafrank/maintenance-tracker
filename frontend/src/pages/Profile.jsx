@@ -184,29 +184,6 @@ export function ProfilePage({ onLogout }) {
       </form>
 
       <hr />
-      <h3>Data Portability</h3>
-      <p className="hint">Export your profile data to XLSX, or import an exported workbook into this profile.</p>
-      <div className="actions">
-        <button className="btn btn-outline-primary" type="button" onClick={exportWorkbook} disabled={isExporting}>
-          {isExporting ? 'Exporting...' : 'Export XLSX'}
-        </button>
-      </div>
-      <form onSubmit={importWorkbook} autoComplete="off">
-        <label htmlFor="profile-import">Import XLSX</label>
-        <div className="actions">
-          <input
-            id="profile-import"
-            type="file"
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-          />
-          <button className="btn btn-outline-primary" type="submit" disabled={!importFile || isImporting}>
-            {isImporting ? 'Importing...' : 'Import Workbook'}
-          </button>
-        </div>
-      </form>
-
-      <hr />
       <h3>Maintenance Task Library</h3>
       <p className="hint">Select an asset type to manage reusable maintenance task names for that type.</p>
       <label htmlFor="task-library-asset-type">Asset Type</label>
@@ -247,6 +224,29 @@ export function ProfilePage({ onLogout }) {
           </div>
         ))}
       </div>
+
+      <hr />
+      <h3>Data Portability</h3>
+      <p className="hint">Export your profile data to XLSX, or import an exported workbook into this profile.</p>
+      <div className="actions">
+        <button className="btn btn-outline-primary" type="button" onClick={exportWorkbook} disabled={isExporting}>
+          {isExporting ? 'Exporting...' : 'Export XLSX'}
+        </button>
+      </div>
+      <form onSubmit={importWorkbook} autoComplete="off">
+        <label htmlFor="profile-import">Import XLSX</label>
+        <div className="actions">
+          <input
+            id="profile-import"
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+          />
+          <button className="btn btn-outline-primary" type="submit" disabled={!importFile || isImporting}>
+            {isImporting ? 'Importing...' : 'Import Workbook'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
