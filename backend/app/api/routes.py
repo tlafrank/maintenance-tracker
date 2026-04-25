@@ -5,6 +5,8 @@ from uuid import uuid4
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook, load_workbook
 from PIL import Image, UnidentifiedImageError
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import desc, select
@@ -124,6 +126,330 @@ def update_profile(payload: UserProfileUpdate, current_user: User = Depends(get_
     return current_user
 
 
+@router.get('/auth/profile/export')
+def export_profile_workbook(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    workbook = Workbook()
+    assets_sheet = workbook.active
+    assets_sheet.title = 'Assets'
+    assets_sheet.append([
+        'asset_external_id',
+        'name',
+        'asset_type',
+        'manufacturer',
+        'model',
+        'year',
+        'registration_or_serial',
+        'notes',
+        'service_trigger',
+        'meter_current_value',
+        'archived_at',
+    ])
+
+    events_sheet = workbook.create_sheet('Maintenance Activities')
+    events_sheet.append([
+        'asset_external_id',
+        'asset_name',
+        'performed_at',
+        'event_type',
+        'notes',
+        'completion_meter_value',
+        'schedule_title',
+    ])
+
+    schedules_sheet = workbook.create_sheet('Scheduled Tasks')
+    schedules_sheet.append([
+        'asset_external_id',
+        'asset_name',
+        'title',
+        'description',
+        'interval_days',
+        'interval_distance',
+        'interval_hours',
+        'interval_cycles',
+        'due_soon_threshold_days',
+        'due_soon_threshold_distance',
+        'due_soon_threshold_hours',
+        'due_soon_threshold_cycles',
+        'active',
+    ])
+
+    assets = db.scalars(
+        select(Asset).where(Asset.owner_user_id == current_user.id).order_by(Asset.id)
+    ).all()
+
+    meters_by_asset = {
+        meter.asset_id: meter
+        for meter in db.scalars(select(Meter).join(Asset, Meter.asset_id == Asset.id).where(Asset.owner_user_id == current_user.id)).all()
+    }
+    asset_by_id = {asset.id: asset for asset in assets}
+
+    for asset in assets:
+        meter = meters_by_asset.get(asset.id)
+        assets_sheet.append([
+            asset.id,
+            asset.name,
+            asset.asset_type,
+            asset.manufacturer,
+            asset.model,
+            asset.year,
+            asset.registration_or_serial,
+            asset.notes,
+            asset.service_trigger,
+            float(meter.current_value) if meter and meter.current_value is not None else None,
+            asset.archived_at.isoformat() if asset.archived_at else None,
+        ])
+
+    schedules = db.scalars(
+        select(MaintenanceSchedule).join(Asset, MaintenanceSchedule.asset_id == Asset.id).where(Asset.owner_user_id == current_user.id).order_by(MaintenanceSchedule.asset_id, MaintenanceSchedule.id)
+    ).all()
+    for schedule in schedules:
+        asset = asset_by_id.get(schedule.asset_id)
+        if not asset:
+            continue
+        schedules_sheet.append([
+            asset.id,
+            asset.name,
+            schedule.title,
+            schedule.description,
+            schedule.interval_days,
+            schedule.interval_distance,
+            schedule.interval_hours,
+            schedule.interval_cycles,
+            schedule.due_soon_threshold_days,
+            schedule.due_soon_threshold_distance,
+            schedule.due_soon_threshold_hours,
+            schedule.due_soon_threshold_cycles,
+            bool(schedule.active),
+        ])
+
+    events = db.scalars(
+        select(MaintenanceEvent).join(Asset, MaintenanceEvent.asset_id == Asset.id).where(Asset.owner_user_id == current_user.id).order_by(MaintenanceEvent.asset_id, MaintenanceEvent.performed_at)
+    ).all()
+    for event in events:
+        asset = asset_by_id.get(event.asset_id)
+        if not asset:
+            continue
+        events_sheet.append([
+            asset.id,
+            asset.name,
+            event.performed_at.isoformat() if event.performed_at else None,
+            event.event_type,
+            event.notes,
+            event.completion_meter_value,
+            event.schedule.title if event.schedule else None,
+        ])
+
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    timestamp = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
+    headers = {
+        'Content-Disposition': f'attachment; filename="maintenance-profile-export-{timestamp}.xlsx"',
+    }
+    return StreamingResponse(
+        output,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers=headers,
+    )
+
+
+@router.post('/auth/profile/import')
+async def import_profile_workbook(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not file.filename or not file.filename.lower().endswith('.xlsx'):
+        raise HTTPException(status_code=400, detail='Upload an .xlsx workbook')
+    workbook_bytes = await file.read()
+    try:
+        workbook = load_workbook(io.BytesIO(workbook_bytes), data_only=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail='Invalid workbook file') from exc
+
+    required_sheets = {'Assets', 'Maintenance Activities', 'Scheduled Tasks'}
+    missing_sheets = [name for name in required_sheets if name not in workbook.sheetnames]
+    if missing_sheets:
+        raise HTTPException(status_code=400, detail=f'Missing required sheet(s): {", ".join(missing_sheets)}')
+
+    assets_sheet = workbook['Assets']
+    events_sheet = workbook['Maintenance Activities']
+    schedules_sheet = workbook['Scheduled Tasks']
+
+    def rows_as_dicts(sheet):
+        rows = list(sheet.iter_rows(values_only=True))
+        if not rows:
+            return []
+        headers = [str(cell).strip() if cell is not None else '' for cell in rows[0]]
+        output_rows = []
+        for row in rows[1:]:
+            if not row or all(cell in (None, '') for cell in row):
+                continue
+            output_rows.append({headers[idx]: row[idx] if idx < len(row) else None for idx in range(len(headers))})
+        return output_rows
+
+    asset_rows = rows_as_dicts(assets_sheet)
+    schedule_rows = rows_as_dicts(schedules_sheet)
+    event_rows = rows_as_dicts(events_sheet)
+
+    asset_refs: dict[str, Asset] = {}
+    created_assets = 0
+    created_schedules = 0
+    created_events = 0
+    created_templates = 0
+    imported_types: set[str] = set()
+
+    existing_types = {item.name for item in db.scalars(select(AssetType)).all()}
+    existing_templates = {
+        (template.asset_type or '', template.task_name.strip().lower())
+        for template in db.scalars(select(MaintenanceTaskTemplate).where(MaintenanceTaskTemplate.owner_user_id == current_user.id)).all()
+    }
+
+    for row in asset_rows:
+        asset_name = _xlsx_string(row.get('name'))
+        asset_type_name = _xlsx_string(row.get('asset_type'))
+        if not asset_name or not asset_type_name:
+            continue
+        if asset_type_name not in existing_types:
+            db.add(AssetType(name=asset_type_name))
+            existing_types.add(asset_type_name)
+            imported_types.add(asset_type_name)
+        asset = Asset(
+            owner_user_id=current_user.id,
+            name=asset_name,
+            asset_type=asset_type_name,
+            manufacturer=_xlsx_string(row.get('manufacturer')),
+            model=_xlsx_string(row.get('model')),
+            year=_xlsx_int(row.get('year')),
+            registration_or_serial=_xlsx_string(row.get('registration_or_serial')),
+            notes=_xlsx_string(row.get('notes')),
+            service_trigger=_xlsx_string(row.get('service_trigger')) or 'distance',
+            archived_at=_xlsx_datetime(row.get('archived_at')),
+        )
+        db.add(asset)
+        db.flush()
+        created_assets += 1
+
+        external_id = _xlsx_string(str(row.get('asset_external_id')) if row.get('asset_external_id') is not None else None)
+        asset_refs[external_id or f'name:{asset_name}'] = asset
+        asset_refs[f'name:{asset_name}'] = asset
+
+        meter_value = _xlsx_float(row.get('meter_current_value'))
+        if meter_value is not None:
+            db.add(
+                Meter(
+                    asset_id=asset.id,
+                    service_trigger=asset.service_trigger,
+                    unit=_unit_for_trigger(asset.service_trigger, current_user.preferred_distance_unit),
+                    current_value=meter_value,
+                )
+            )
+
+    schedule_map: dict[tuple[int, str], MaintenanceSchedule] = {}
+
+    for row in schedule_rows:
+        asset_external_id = _xlsx_string(str(row.get('asset_external_id')) if row.get('asset_external_id') is not None else None)
+        asset_name = _xlsx_string(row.get('asset_name'))
+        title = _xlsx_string(row.get('title'))
+        if not title:
+            continue
+        asset = asset_refs.get(asset_external_id or '')
+        if not asset and asset_name:
+            asset = asset_refs.get(f'name:{asset_name}')
+        if not asset:
+            continue
+        schedule = MaintenanceSchedule(
+            asset_id=asset.id,
+            title=title,
+            description=_xlsx_string(row.get('description')),
+            interval_days=_xlsx_int(row.get('interval_days')),
+            interval_distance=_xlsx_float(row.get('interval_distance')),
+            interval_hours=_xlsx_float(row.get('interval_hours')),
+            interval_cycles=_xlsx_float(row.get('interval_cycles')),
+            due_soon_threshold_days=_xlsx_int(row.get('due_soon_threshold_days')),
+            due_soon_threshold_distance=_xlsx_float(row.get('due_soon_threshold_distance')),
+            due_soon_threshold_hours=_xlsx_float(row.get('due_soon_threshold_hours')),
+            due_soon_threshold_cycles=_xlsx_float(row.get('due_soon_threshold_cycles')),
+            active=_xlsx_bool(row.get('active'), default=True),
+        )
+        db.add(schedule)
+        created_schedules += 1
+        db.flush()
+        schedule_map[(asset.id, title.strip().lower())] = schedule
+
+        template_key = (asset.asset_type or '', title.strip().lower())
+        if template_key not in existing_templates:
+            db.add(MaintenanceTaskTemplate(owner_user_id=current_user.id, asset_type=asset.asset_type, task_name=title))
+            existing_templates.add(template_key)
+            created_templates += 1
+
+    for row in event_rows:
+        asset_external_id = _xlsx_string(str(row.get('asset_external_id')) if row.get('asset_external_id') is not None else None)
+        asset_name = _xlsx_string(row.get('asset_name'))
+        event_type = _xlsx_string(row.get('event_type'))
+        if not event_type:
+            continue
+        asset = asset_refs.get(asset_external_id or '')
+        if not asset and asset_name:
+            asset = asset_refs.get(f'name:{asset_name}')
+        if not asset:
+            continue
+        schedule_title = _xlsx_string(row.get('schedule_title'))
+        schedule = schedule_map.get((asset.id, schedule_title.strip().lower())) if schedule_title else None
+        event = MaintenanceEvent(
+            asset_id=asset.id,
+            schedule_id=schedule.id if schedule else None,
+            performed_by_user_id=current_user.id,
+            performed_at=_xlsx_datetime(row.get('performed_at')) or datetime.utcnow(),
+            event_type=event_type,
+            notes=_xlsx_string(row.get('notes')),
+            completion_meter_value=_xlsx_float(row.get('completion_meter_value')),
+        )
+        db.add(event)
+        created_events += 1
+        meter_value = _xlsx_float(row.get('completion_meter_value'))
+        if meter_value is not None:
+            meter = db.scalar(select(Meter).where(Meter.asset_id == asset.id).order_by(desc(Meter.id)))
+            if not meter:
+                meter = Meter(
+                    asset_id=asset.id,
+                    service_trigger=asset.service_trigger,
+                    unit=_unit_for_trigger(asset.service_trigger, current_user.preferred_distance_unit),
+                    current_value=meter_value,
+                )
+                db.add(meter)
+                db.flush()
+            else:
+                meter.current_value = meter_value
+            db.add(
+                MeterReading(
+                    meter_id=meter.id,
+                    asset_id=asset.id,
+                    reading_value=meter_value,
+                    reading_timestamp=event.performed_at,
+                    source='import',
+                    notes='Imported from profile workbook',
+                )
+            )
+
+        for task_name in [task.strip() for task in event_type.split(',') if task.strip()]:
+            template_key = (asset.asset_type or '', task_name.lower())
+            if template_key in existing_templates:
+                continue
+            db.add(MaintenanceTaskTemplate(owner_user_id=current_user.id, asset_type=asset.asset_type, task_name=task_name))
+            existing_templates.add(template_key)
+            created_templates += 1
+
+    db.commit()
+    return {
+        'imported_asset_types': len(imported_types),
+        'imported_assets': created_assets,
+        'imported_schedules': created_schedules,
+        'imported_events': created_events,
+        'imported_task_templates': created_templates,
+    }
+
+
 
 
 @router.get('/asset-types', response_model=list[AssetTypeOut])
@@ -211,6 +537,60 @@ def _unit_for_trigger(service_trigger: str, preferred_distance_unit: str = 'km')
     if service_trigger == 'cycles':
         return 'cycles'
     return ''
+
+
+def _xlsx_string(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _xlsx_datetime(value) -> datetime | None:
+    if value in (None, ''):
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _xlsx_float(value) -> float | None:
+    if value in (None, ''):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _xlsx_int(value) -> int | None:
+    if value in (None, ''):
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _xlsx_bool(value, default: bool = True) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {'true', '1', 'yes', 'y'}:
+            return True
+        if normalized in {'false', '0', 'no', 'n'}:
+            return False
+    return default
 
 
 @router.get('/assets/{asset_id}', response_model=AssetOut)
