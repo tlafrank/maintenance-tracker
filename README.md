@@ -119,6 +119,77 @@ cp .env.example .env
 
 ---
 
+
+## Public-facing Nginx deployment notes
+
+The stack now supports running behind a public-facing Nginx reverse proxy while keeping frontend and API behavior unchanged.
+
+### Frontend build-time variables
+
+Set these in `.env` before `docker compose up -d --build`:
+
+- `VITE_API_BASE_URL` (default: `/api`)
+  - Keep this as `/api` when Nginx serves frontend and API on the same origin.
+  - Use a full URL only if your API is hosted on a different origin.
+- `VITE_APP_BASE_PATH` (default: `/`)
+  - Use `/` for root-hosted apps.
+  - Use a subpath like `/maintenance/` only when your public Nginx mounts the app under a path prefix.
+
+
+### Public proxy network
+
+The `frontend` service is attached to an external Docker network for public reverse proxies:
+
+- Env var: `PROXY_PUBLIC_NETWORK`
+- Default network name: `proxy-public`
+
+Create the network once on the host if it does not exist:
+
+```bash
+docker network create proxy-public
+```
+
+If you use a different network name, set it in `.env` and recreate frontend:
+
+```bash
+PROXY_PUBLIC_NETWORK=my-public-network
+docker compose up -d --build frontend
+```
+
+
+### Control self-service registration
+
+For internet-facing deployment, you can enable or disable public self-service account creation with one backend environment variable:
+
+```env
+REGISTRATION_ENABLED=true
+```
+
+- `true` (default): anyone who can reach the app can use the register form.
+- `false`: register UI is hidden and `POST /api/auth/register` returns HTTP 403.
+
+Recommended approach for public exposure:
+
+1. Set `REGISTRATION_ENABLED=false`.
+2. Create users through an admin-only process (for now, temporarily toggle it on to add users, then set back to false).
+3. Keep strong JWT secret and HTTPS on the public reverse proxy.
+
+### Backend CORS for public domains
+
+Set `CORS_ORIGINS` as a comma-separated list including every browser origin that can load the app, for example:
+
+```env
+CORS_ORIGINS=https://maintenance.example.com,https://www.maintenance.example.com,http://localhost
+```
+
+### Rebuild after env changes
+
+Vite variables are baked into the frontend build, so rebuild the frontend image after changing `VITE_*` variables:
+
+```bash
+docker compose up -d --build frontend nginx
+```
+
 ## Monitoring authentication logs
 
 Login and registration events are logged by the backend service (`app.auth` logger).

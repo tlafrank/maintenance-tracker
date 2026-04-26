@@ -27,6 +27,7 @@ export function LoginPage({ onLogin }) {
     navigate('/dashboard')
   }
 
+
   return (
     <form onSubmit={submit} className="card narrow-card">
       <h2 className="h4">Login</h2>
@@ -40,7 +41,7 @@ export function LoginPage({ onLogin }) {
   )
 }
 
-export function RegisterPage() {
+export function RegisterPage({ registrationEnabled }) {
   const [form, setForm] = useState({ email: '', password: '' })
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -55,6 +56,15 @@ export function RegisterPage() {
     } catch (err) {
       setError(err.message || 'Unable to create account')
     }
+  }
+
+  if (!registrationEnabled) {
+    return (
+      <div className="card narrow-card">
+        <h2 className="h4">Register</h2>
+        <p>New account registration is currently disabled. Contact an administrator for access.</p>
+      </div>
+    )
   }
 
   return (

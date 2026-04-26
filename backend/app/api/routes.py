@@ -33,6 +33,7 @@ from app.schemas.schemas import (
     MaintenanceTaskCreate,
     MaintenanceTaskDeleteImpact,
     MaintenanceTaskUpdate,
+    RegistrationStatus,
     MeterCreate,
     MeterOut,
     MeterReadingCreate,
@@ -58,6 +59,14 @@ MAX_THUMBNAIL_DIMENSIONS = (1024, 1024)
 
 @router.post('/auth/register', response_model=UserOut)
 def register(payload: UserCreate, request: Request, db: Session = Depends(get_db)):
+    if not settings.registration_enabled:
+        auth_logger.warning(
+            'register_blocked_registration_disabled email=%s ip=%s',
+            payload.email,
+            request.client.host if request.client else 'unknown',
+        )
+        raise HTTPException(status_code=403, detail='Registration is currently disabled')
+
     existing = db.scalar(select(User).where(User.email == payload.email))
     if existing:
         auth_logger.warning(
@@ -83,6 +92,11 @@ def register(payload: UserCreate, request: Request, db: Session = Depends(get_db
         request.client.host if request.client else 'unknown',
     )
     return user
+
+
+@router.get('/auth/registration-status', response_model=RegistrationStatus)
+def registration_status():
+    return RegistrationStatus(registration_enabled=settings.registration_enabled)
 
 
 @router.post('/auth/login', response_model=Token)
