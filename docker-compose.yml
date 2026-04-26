@@ -31,6 +31,8 @@ services:
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
         VITE_APP_BASE_PATH: ${VITE_APP_BASE_PATH:-/}
+    environment:
+      VITE_ALLOWED_HOSTS: ${VITE_ALLOWED_HOSTS:-localhost,127.0.0.1}
     restart: unless-stopped
     depends_on:
       - backend

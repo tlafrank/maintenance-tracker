@@ -134,9 +134,14 @@ Set these in `.env` before `docker compose up -d --build`:
 - `VITE_APP_BASE_PATH` (default: `/`)
   - Use `/` for root-hosted apps.
   - Use a subpath like `/maintenance/` only when your public Nginx mounts the app under a path prefix.
+- `VITE_ALLOWED_HOSTS` (default: `localhost,127.0.0.1`)
+  - Required when using `vite preview` behind a reverse proxy with a custom hostname.
+  - Example: `VITE_ALLOWED_HOSTS=maint.arpa,maintenance.redcove.net,localhost,127.0.0.1`
 
 
 ### Public proxy network
+
+If you get `Blocked request. This host (...) is not allowed.` from Vite preview, add that hostname to `VITE_ALLOWED_HOSTS` and restart the frontend container.
 
 The `frontend` service is attached to an external Docker network for public reverse proxies:
 
