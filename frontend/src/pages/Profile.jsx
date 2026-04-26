@@ -19,6 +19,9 @@ export function ProfilePage({ onLogout }) {
   const [selectedAssetType, setSelectedAssetType] = useState('')
   const [editingTaskId, setEditingTaskId] = useState(null)
   const [editingTaskName, setEditingTaskName] = useState('')
+  const [importFile, setImportFile] = useState(null)
+  const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
 
   useEffect(() => {
     Promise.all([apiFetch('/auth/me'), apiFetch('/asset-types')]).then(([me, assetTypeList]) => {
@@ -90,6 +93,58 @@ export function ProfilePage({ onLogout }) {
     if (!confirmed) return
     await apiFetch(`/maintenance-tasks/${taskId}`, { method: 'DELETE' })
     setTasks((current) => current.filter((task) => task.id !== taskId))
+  }
+
+  async function exportWorkbook() {
+    setError('')
+    setMessage('')
+    setIsExporting(true)
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/auth/profile/export', {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!response.ok) {
+        throw new Error(await response.text() || 'Unable to export workbook')
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const contentDisposition = response.headers.get('content-disposition') || ''
+      const fileNameMatch = /filename=\"?([^\";]+)\"?/i.exec(contentDisposition)
+      a.href = url
+      a.download = fileNameMatch?.[1] || 'maintenance-profile-export.xlsx'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      setMessage('Workbook exported.')
+    } catch (err) {
+      setError(err.message || 'Unable to export workbook')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  async function importWorkbook(e) {
+    e.preventDefault()
+    if (!importFile) return
+    setError('')
+    setMessage('')
+    setIsImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', importFile)
+      const result = await apiFetch('/auth/profile/import', { method: 'POST', body: formData })
+      setMessage(`Workbook imported. Assets: ${result.imported_assets}, activities: ${result.imported_events}, schedules: ${result.imported_schedules}.`)
+      const [assetTypeList] = await Promise.all([apiFetch('/asset-types')])
+      setAssetTypes(assetTypeList)
+    } catch (err) {
+      setError(err.message || 'Unable to import workbook')
+    } finally {
+      setIsImporting(false)
+    }
   }
 
   return (
@@ -169,6 +224,29 @@ export function ProfilePage({ onLogout }) {
           </div>
         ))}
       </div>
+
+      <hr />
+      <h3>Data Portability</h3>
+      <p className="hint">Export your profile data to XLSX, or import an exported workbook into this profile.</p>
+      <div className="actions">
+        <button className="btn btn-outline-primary" type="button" onClick={exportWorkbook} disabled={isExporting}>
+          {isExporting ? 'Exporting...' : 'Export XLSX'}
+        </button>
+      </div>
+      <form onSubmit={importWorkbook} autoComplete="off">
+        <label htmlFor="profile-import">Import XLSX</label>
+        <div className="actions">
+          <input
+            id="profile-import"
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+          />
+          <button className="btn btn-outline-primary" type="submit" disabled={!importFile || isImporting}>
+            {isImporting ? 'Importing...' : 'Import Workbook'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
