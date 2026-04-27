@@ -16,6 +16,10 @@ class UserCreate(BaseModel):
     display_name: str | None = None
 
 
+class RegistrationStatus(BaseModel):
+    registration_enabled: bool
+
+
 class UserOut(BaseModel):
     id: int
     email: EmailStr

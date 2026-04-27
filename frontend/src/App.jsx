@@ -26,6 +26,7 @@ export default function App() {
   const navigate = useNavigate()
   const [me, setMe] = useState(null)
   const [authState, setAuthState] = useState(localStorage.getItem('token') ? 'loading' : 'unauthenticated')
+  const [registrationEnabled, setRegistrationEnabled] = useState(true)
   const isAuthenticated = authState === 'authenticated'
 
   function logout() {
@@ -36,6 +37,15 @@ export default function App() {
   }
 
   useEffect(() => {
+    fetch('/api/auth/registration-status')
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        if (data && typeof data.registration_enabled === 'boolean') {
+          setRegistrationEnabled(data.registration_enabled)
+        }
+      })
+      .catch(() => {})
+
     if (!localStorage.getItem('token')) {
       setAuthState('unauthenticated')
       return
@@ -69,7 +79,7 @@ export default function App() {
             {isAuthenticated && <Link className="btn btn-outline-primary btn-sm" to="/dashboard">Dashboard</Link>}
             {isAuthenticated && <Link className="btn btn-outline-primary btn-sm" to="/assets">Assets</Link>}
             {!isAuthenticated && <Link className="btn btn-outline-secondary btn-sm" to="/login">Login</Link>}
-            {!isAuthenticated && <Link className="btn btn-outline-secondary btn-sm" to="/register">Register</Link>}
+            {!isAuthenticated && registrationEnabled && <Link className="btn btn-outline-secondary btn-sm" to="/register">Register</Link>}
             {me && <Link className="btn btn-outline-secondary btn-sm" to="/profile">Profile</Link>}
           </nav>
         </div>
@@ -77,7 +87,7 @@ export default function App() {
 
       <Routes>
         <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage onLogin={(user) => { setMe(user); setAuthState('authenticated') }} />} />
-        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/register" element={registrationEnabled ? <RegisterPage registrationEnabled={registrationEnabled} /> : <Navigate to="/login" replace />} />
         <Route path="/dashboard" element={<ProtectedRoute authState={authState}><DashboardPage /></ProtectedRoute>} />
         <Route path="/assets" element={<ProtectedRoute authState={authState}><AssetListPage /></ProtectedRoute>} />
         <Route path="/assets/new" element={<ProtectedRoute authState={authState}><AssetFormPage /></ProtectedRoute>} />
